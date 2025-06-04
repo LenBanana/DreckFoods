@@ -23,11 +23,18 @@ public class FoodEntryDto
 
 public class CreateFoodEntryRequest
 {
-    [Required] public int FddbFoodId { get; set; } // Reference to the food in database
+    [Required] public int FddbFoodId { get; set; }
 
     [Required] [Range(0.1, 10000)] public double GramsConsumed { get; set; }
 
     [Required] public DateTime ConsumedAt { get; set; }
+}
+
+public class EditFoodEntryRequest
+{
+    [Required] public int FddbFoodId { get; set; }
+
+    [Required] [Range(0.1, 10000)] public double GramsConsumed { get; set; }
 }
 
 public class FoodSearchDto

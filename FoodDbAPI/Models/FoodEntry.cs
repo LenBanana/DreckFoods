@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using FoodDbAPI.Models.Fddb;
 
 namespace FoodDbAPI.Models;
 
@@ -8,6 +9,9 @@ public class FoodEntry
 
     [Required]
     public int UserId { get; set; }
+    
+    [Required]
+    public int FddbFoodId { get; set; }
 
     [Required]
     public string FoodName { get; set; } = string.Empty;
@@ -35,4 +39,5 @@ public class FoodEntry
 
     // Navigation properties
     public virtual User User { get; set; } = null!;
+    public virtual FddbFood FddbFood { get; set; } = null!;
 }

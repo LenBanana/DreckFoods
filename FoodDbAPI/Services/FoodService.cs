@@ -142,37 +142,13 @@ public class FoodService(FoodDbContext context, ILogger<FoodService> logger) : I
 
     public async Task<FoodEntryDto> AddFoodEntryAsync(int userId, CreateFoodEntryRequest request)
     {
-        // Get the food from database
-        var food = await context.FddbFoods
-            .Include(f => f.Nutrition)
-            .FirstOrDefaultAsync(f => f.Id == request.FddbFoodId);
+        var food = await GetFoodWithNutritionAsync(request.FddbFoodId);
 
-        if (food == null)
-        {
-            throw new ArgumentException("Food not found");
-        }
-
-        // Calculate nutrition values based on grams consumed
-        var multiplier = request.GramsConsumed / 100.0; // Convert from per 100g to actual amount
-        var nutrition = food.Nutrition.ToNutritionInfo();
-
-        var foodEntry = new FoodEntry
-        {
-            UserId = userId,
-            FoodName = WebUtility.HtmlDecode(food.Name),
-            FoodUrl = food.Url,
-            Brand = food.Brand,
-            ImageUrl = food.ImageUrl,
-            GramsConsumed = request.GramsConsumed,
-            Calories = nutrition.Calories.Value * multiplier,
-            Protein = nutrition.Protein.Value * multiplier,
-            Fat = nutrition.Fat.Value * multiplier,
-            Carbohydrates = nutrition.Carbohydrates.Total.Value * multiplier,
-            Fiber = nutrition.Fiber.Value * multiplier,
-            Sugar = nutrition.Carbohydrates.Sugar.Value * multiplier,
-            ConsumedAt = request.ConsumedAt.ToUniversalTime(),
-            CreatedAt = DateTime.UtcNow
-        };
+        var foodEntry = CreateFoodEntryFromFood(food, request.GramsConsumed);
+        foodEntry.UserId = userId;
+        foodEntry.FddbFoodId = food.Id;
+        foodEntry.ConsumedAt = request.ConsumedAt.ToUniversalTime();
+        foodEntry.CreatedAt = DateTime.UtcNow;
 
         context.FoodEntries.Add(foodEntry);
         await context.SaveChangesAsync();
@@ -181,6 +157,66 @@ public class FoodService(FoodDbContext context, ILogger<FoodService> logger) : I
             userId, food.Name, request.GramsConsumed);
 
         return MapToFoodEntryDto(foodEntry);
+    }
+
+    public async Task<FoodEntryDto> EditFoodEntryAsync(int userId, EditFoodEntryRequest request)
+    {
+        var entry = await context.FoodEntries
+            .FirstOrDefaultAsync(f => f.Id == request.FddbFoodId && f.UserId == userId);
+
+        if (entry == null)
+            throw new ArgumentException("Food entry not found");
+
+        var food = await GetFoodWithNutritionAsync(entry.FddbFoodId);
+
+        UpdateFoodEntryFromFood(entry, food, request.GramsConsumed);
+        entry.CreatedAt = DateTime.UtcNow;
+
+        context.FoodEntries.Update(entry);
+        await context.SaveChangesAsync();
+
+        logger.LogInformation("Food entry edited for user {UserId}: {FoodName} - {Grams}g",
+            userId, food.Name, request.GramsConsumed);
+
+        return MapToFoodEntryDto(entry);
+    }
+
+// Helper methods
+    private async Task<FddbFood> GetFoodWithNutritionAsync(int foodId)
+    {
+        var food = await context.FddbFoods
+            .Include(f => f.Nutrition)
+            .FirstOrDefaultAsync(f => f.Id == foodId);
+
+        if (food == null)
+            throw new ArgumentException("Food not found");
+
+        return food;
+    }
+
+    private FoodEntry CreateFoodEntryFromFood(FddbFood food, double gramsConsumed)
+    {
+        var entry = new FoodEntry();
+        UpdateFoodEntryFromFood(entry, food, gramsConsumed);
+        return entry;
+    }
+
+    private void UpdateFoodEntryFromFood(FoodEntry entry, FddbFood food, double gramsConsumed)
+    {
+        var multiplier = gramsConsumed / 100.0;
+        var nutrition = food.Nutrition.ToNutritionInfo();
+
+        entry.FoodName = WebUtility.HtmlDecode(food.Name);
+        entry.FoodUrl = food.Url;
+        entry.Brand = food.Brand;
+        entry.ImageUrl = food.ImageUrl;
+        entry.GramsConsumed = gramsConsumed;
+        entry.Calories = nutrition.Calories.Value * multiplier;
+        entry.Protein = nutrition.Protein.Value * multiplier;
+        entry.Fat = nutrition.Fat.Value * multiplier;
+        entry.Carbohydrates = nutrition.Carbohydrates.Total.Value * multiplier;
+        entry.Fiber = nutrition.Fiber.Value * multiplier;
+        entry.Sugar = nutrition.Carbohydrates.Sugar.Value * multiplier;
     }
 
     public async Task<List<FoodEntryDto>> GetFoodEntriesAsync(int userId, DateTime? date = null)
@@ -252,6 +288,7 @@ public class FoodService(FoodDbContext context, ILogger<FoodService> logger) : I
                 TotalProtein = dayFoodEntries.Sum(f => f.Protein),
                 TotalFat = dayFoodEntries.Sum(f => f.Fat),
                 TotalCarbohydrates = dayFoodEntries.Sum(f => f.Carbohydrates),
+                TotalSugar = dayFoodEntries.Sum(f => f.Sugar),
                 TotalFiber = dayFoodEntries.Sum(f => f.Fiber),
                 FoodEntries = dayFoodEntries.Select(MapToFoodEntryDto).ToList(),
                 WeightEntry = dayWeightEntry != null

@@ -98,6 +98,30 @@ public class FoodController(IFoodService foodService, ILogger<FoodController> lo
             return StatusCode(500, new { message = "An error occurred" });
         }
     }
+    
+    [HttpPut("entries/{entryId}")]
+    public async Task<ActionResult<FoodEntryDto>> EditFoodEntry(int entryId, [FromBody] EditFoodEntryRequest request)
+    {
+        try
+        {
+            var userId = User.GetUserId();
+            var entry = await foodService.EditFoodEntryAsync(userId, request);
+            return Ok(entry);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error editing food entry");
+            return StatusCode(500, new { message = "An error occurred" });
+        }
+    }
 
     [HttpGet("entries")]
     public async Task<ActionResult<List<FoodEntryDto>>> GetFoodEntries([FromQuery] DateTime? date = null)
