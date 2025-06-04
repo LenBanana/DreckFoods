@@ -1,4 +1,5 @@
 using FoodDbAPI.Data;
+using FoodDbAPI.DTOs;
 using FoodDbAPI.Models.Fddb;
 using FoodDbAPI.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
@@ -12,7 +13,8 @@ namespace FoodDbAPI.Controllers;
 public class DataImportController(IDataImportService import) : ControllerBase
 {
     [HttpPost("import")]
-    public async Task<IActionResult> ImportFoods([FromBody] List<FddbFood> foods)
+    [DisableRequestSizeLimit]
+    public async Task<IActionResult> ImportFoods([FromBody] List<FddbFoodImportDTO> foods)
     {
         await import.ImportFoodDataAsync(foods);
         return Ok(new { imported = foods.Count });

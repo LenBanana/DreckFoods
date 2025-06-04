@@ -40,6 +40,10 @@ public class TimelineController(IFoodService foodService, ILogger<TimelineContro
 
             return Ok(response);
         }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { message = ex.Message });
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error getting timeline");

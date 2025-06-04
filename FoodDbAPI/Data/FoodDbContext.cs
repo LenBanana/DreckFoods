@@ -1,6 +1,8 @@
+using System.Text.Json;
 using FoodDbAPI.Models;
 using FoodDbAPI.Models.Fddb;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace FoodDbAPI.Data;
 
@@ -15,6 +17,10 @@ public class FoodDbContext(DbContextOptions<FoodDbContext> options) : DbContext(
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        
+        var stringListConverter = new ValueConverter<List<string>, string>(
+            v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+            v => JsonSerializer.Deserialize<List<string>>(v, (JsonSerializerOptions?)null) ?? new List<string>());
 
         // User configuration
         modelBuilder.Entity<User>(entity =>
@@ -47,6 +53,10 @@ public class FoodDbContext(DbContextOptions<FoodDbContext> options) : DbContext(
                 .OnDelete(DeleteBehavior.Cascade);
             entity.Property(e => e.FoodName).HasMaxLength(200);
             entity.Property(e => e.Brand).HasMaxLength(100);
+            entity.Property(e => e.ConsumedAt)
+                .HasConversion(
+                    v => v.ToUniversalTime(),
+                    v => DateTime.SpecifyKind(v, DateTimeKind.Utc));
             entity.HasIndex(e => new { e.UserId, e.ConsumedAt });
         });
 
@@ -61,6 +71,12 @@ public class FoodDbContext(DbContextOptions<FoodDbContext> options) : DbContext(
             entity.Property(e => e.Brand).HasMaxLength(200);
             entity.HasIndex(e => e.Name);
             entity.HasIndex(e => e.Brand);
+            
+            // Use the string list converter for Tags
+            entity.Property(e => e.Tags)
+                .HasColumnName("TagsJson")
+                .HasConversion(stringListConverter)
+                .HasMaxLength(1000);
 
             // Configure the one-to-one relationship with nutrition
             entity.HasOne(e => e.Nutrition)

@@ -49,7 +49,7 @@ public class AuthService(
         logger.LogInformation("New user registered: {Email}", user.Email);
 
         var link =
-            $"{frontendOpt.Value.BaseUrl.TrimEnd('/')}/confirm-email?userId={user.Id}&token={WebUtility.UrlEncode(plainToken)}";
+            $"{frontendOpt.Value.BaseUrl.TrimEnd('/')}/auth/confirm-email?userId={user.Id}&token={WebUtility.UrlEncode(plainToken)}";
         var html = $$"""
                      
                                          <html>
@@ -128,6 +128,7 @@ public class AuthService(
         var tokenDescriptor = new SecurityTokenDescriptor
         {
             Subject = new ClaimsIdentity([
+                new Claim(ClaimTypes.NameIdentifier, userId.ToString()), 
                 new Claim("id", userId.ToString()),
                 new Claim("email", email),
                 new Claim(ClaimTypes.Role, role.ToString())

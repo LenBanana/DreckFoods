@@ -21,6 +21,10 @@ public class WeightController(IWeightService weightService, ILogger<WeightContro
             var entry = await weightService.AddWeightEntryAsync(userId, request);
             return Ok(entry);
         }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { message = ex.Message });
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error adding weight entry");
@@ -38,6 +42,10 @@ public class WeightController(IWeightService weightService, ILogger<WeightContro
             var userId = User.GetUserId();
             var entries = await weightService.GetWeightHistoryAsync(userId, startDate, endDate);
             return Ok(entries);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { message = ex.Message });
         }
         catch (Exception ex)
         {
@@ -58,6 +66,10 @@ public class WeightController(IWeightService weightService, ILogger<WeightContro
         catch (ArgumentException ex)
         {
             return NotFound(new { message = ex.Message });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { message = ex.Message });
         }
         catch (Exception ex)
         {

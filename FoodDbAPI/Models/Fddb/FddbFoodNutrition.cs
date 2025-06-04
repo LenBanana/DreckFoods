@@ -98,4 +98,53 @@ public class FddbFoodNutrition
             Fiber = new NutritionalValue { Value = FiberValue, Unit = FiberUnit }
         };
     }
+
+    public static FddbFoodNutrition FromNutritionInfo(NutritionInfo nutrition)
+    {
+        return new FddbFoodNutrition
+        {
+            KilojoulesValue = nutrition.Kilojoules.Value,
+            KilojoulesUnit = nutrition.Kilojoules.Unit,
+            CaloriesValue = nutrition.Calories.Value,
+            CaloriesUnit = nutrition.Calories.Unit,
+            ProteinValue = nutrition.Protein.Value,
+            ProteinUnit = nutrition.Protein.Unit,
+            FatValue = nutrition.Fat.Value,
+            FatUnit = nutrition.Fat.Unit,
+            CarbohydratesTotalValue = nutrition.Carbohydrates.Total.Value,
+            CarbohydratesTotalUnit = nutrition.Carbohydrates.Total.Unit,
+            CarbohydratesSugarValue = nutrition.Carbohydrates.Sugar.Value,
+            CarbohydratesSugarUnit = nutrition.Carbohydrates.Sugar.Unit,
+            CarbohydratesPolyolsValue = nutrition.Carbohydrates.Polyols.Value,
+            CarbohydratesPolyolsUnit = nutrition.Carbohydrates.Polyols.Unit,
+            FiberValue = nutrition.Fiber.Value,
+            FiberUnit = nutrition.Fiber.Unit,
+            SaltValue = nutrition.Minerals.Salt.Value,
+            SaltUnit = nutrition.Minerals.Salt.Unit,
+            IronValue = nutrition.Minerals.Iron.Value,
+            IronUnit = nutrition.Minerals.Iron.Unit,
+            ZincValue = nutrition.Minerals.Zinc.Value,
+            ZincUnit = nutrition.Minerals.Zinc.Unit,
+            MagnesiumValue = nutrition.Minerals.Magnesium.Value,
+            MagnesiumUnit = nutrition.Minerals.Magnesium.Unit,
+            ChlorideValue = nutrition.Minerals.Chloride.Value,
+            ChlorideUnit = nutrition.Minerals.Chloride.Unit,
+            ManganeseValue = nutrition.Minerals.Manganese.Value,
+            ManganeseUnit = nutrition.Minerals.Manganese.Unit,
+            SulfurValue = nutrition.Minerals.Sulfur.Value,
+            SulfurUnit = nutrition.Minerals.Sulfur.Unit,
+            PotassiumValue = nutrition.Minerals.Potassium.Value,
+            PotassiumUnit = nutrition.Minerals.Potassium.Unit,
+            CalciumValue = nutrition.Minerals.Calcium.Value,
+            CalciumUnit = nutrition.Minerals.Calcium.Unit,
+            PhosphorusValue = nutrition.Minerals.Phosphorus.Value,
+            PhosphorusUnit = nutrition.Minerals.Phosphorus.Unit,
+            CopperValue = nutrition.Minerals.Copper.Value,
+            CopperUnit = nutrition.Minerals.Copper.Unit,
+            FluorideValue = nutrition.Minerals.Fluoride.Value,
+            FluorideUnit = nutrition.Minerals.Fluoride.Unit,
+            IodineValue = nutrition.Minerals.Iodine.Value,
+            IodineUnit = nutrition.Minerals.Iodine.Unit
+        };
+    }
 }

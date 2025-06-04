@@ -1,4 +1,5 @@
 using FoodDbAPI.DTOs;
+using FoodDbAPI.DTOs.Enums;
 using FoodDbAPI.Extensions;
 using FoodDbAPI.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
@@ -15,7 +16,9 @@ public class FoodController(IFoodService foodService, ILogger<FoodController> lo
     public async Task<ActionResult<FoodSearchResponse>> SearchFoods(
         [FromQuery] string query,
         [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 20)
+        [FromQuery] int pageSize = 20,
+        [FromQuery] FoodSortBy sortBy = FoodSortBy.Name,
+        [FromQuery] SortDirection sortDirection = SortDirection.Ascending)
     {
         try
         {
@@ -25,17 +28,30 @@ public class FoodController(IFoodService foodService, ILogger<FoodController> lo
             }
 
             if (pageSize > 100)
-            {
-                pageSize = 100; // Limit maximum page size
-            }
+                pageSize = 100;
 
-            var result = await foodService.SearchFoodsAsync(query, page, pageSize);
+            var result = await foodService.SearchFoodsAsync(query, page, pageSize, sortBy, sortDirection);
             return Ok(result);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error searching foods with query: {Query}", query);
             return StatusCode(500, new { message = "An error occurred while searching foods" });
+        }
+    }
+
+    [HttpGet("categories")]
+    public async Task<ActionResult<List<string>>> GetFoodCategories()
+    {
+        try
+        {
+            var categories = await foodService.GetFoodCategoriesAsync();
+            return Ok(categories);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error getting food categories");
+            return StatusCode(500, new { message = "An error occurred while retrieving food categories" });
         }
     }
 
@@ -49,6 +65,7 @@ public class FoodController(IFoodService foodService, ILogger<FoodController> lo
             {
                 return NotFound(new { message = "Food not found" });
             }
+
             return Ok(food);
         }
         catch (Exception ex)
@@ -71,6 +88,10 @@ public class FoodController(IFoodService foodService, ILogger<FoodController> lo
         {
             return BadRequest(new { message = ex.Message });
         }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { message = ex.Message });
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error adding food entry");
@@ -86,6 +107,10 @@ public class FoodController(IFoodService foodService, ILogger<FoodController> lo
             var userId = User.GetUserId();
             var entries = await foodService.GetFoodEntriesAsync(userId, date);
             return Ok(entries);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { message = ex.Message });
         }
         catch (Exception ex)
         {
@@ -106,6 +131,10 @@ public class FoodController(IFoodService foodService, ILogger<FoodController> lo
         catch (ArgumentException ex)
         {
             return NotFound(new { message = ex.Message });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { message = ex.Message });
         }
         catch (Exception ex)
         {

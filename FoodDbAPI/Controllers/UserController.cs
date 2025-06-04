@@ -24,6 +24,10 @@ public class UserController(IUserService userService, ILogger<UserController> lo
         {
             return NotFound(new { message = ex.Message });
         }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { message = ex.Message });
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error getting user profile");
@@ -43,6 +47,10 @@ public class UserController(IUserService userService, ILogger<UserController> lo
         catch (ArgumentException ex)
         {
             return NotFound(new { message = ex.Message });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { message = ex.Message });
         }
         catch (Exception ex)
         {
