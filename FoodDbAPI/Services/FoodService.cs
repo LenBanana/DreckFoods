@@ -239,11 +239,11 @@ public class FoodService(FoodDbContext context, ILogger<FoodService> logger) : I
         while (currentDate >= startDate.Date)
         {
             var dayFoodEntries = foodEntries
-                .Where(f => f.ConsumedAt.ToLocalTime().Date == currentDate)
+                .Where(f => f.ConsumedAt.Date == currentDate)
                 .ToList();
 
             var dayWeightEntry = weightEntries
-                .FirstOrDefault(w => w.RecordedAt.ToLocalTime().Date == currentDate);
+                .FirstOrDefault(w => w.RecordedAt.Date == currentDate);
 
             var dailyData = new DailyTimelineDto
             {
