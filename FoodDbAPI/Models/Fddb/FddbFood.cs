@@ -16,7 +16,9 @@ public class FddbFood
     [MaxLength(1000)] public string ImageUrl { get; set; } = string.Empty;
 
     [MaxLength(200)] public string Brand { get; set; } = string.Empty;
-    
+
+    [MaxLength(50)] public string? Ean { get; set; }
+
     public List<string> Tags { get; set; } = [];
 
     // Navigation property for nutrition

@@ -58,17 +58,15 @@ public class FoodService(FoodDbContext context, ILogger<FoodService> logger) : I
     
     public async Task<FoodSearchResponse> GetPastEatenFoodsAsync(int userId, int page = 1, int pageSize = 20)
     {
-        var query = context.FoodEntries
+        var allEntries = await context.FoodEntries
             .Where(fe => fe.UserId == userId)
             .Include(fe => fe.FddbFood)
             .ThenInclude(f => f.Nutrition)
-            .AsQueryable();
-
-        var totalCount = await query.CountAsync();
-        var totalPages = (int)Math.Ceiling((double)totalCount / pageSize);
-
-        var foods = await query
             .OrderByDescending(fe => fe.ConsumedAt)
+            .ToListAsync();
+
+        var distinctFoods = allEntries
+            .DistinctBy(fe => fe.FddbFood.Id)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Select(fe => new FoodSearchDto
@@ -82,12 +80,15 @@ public class FoodService(FoodDbContext context, ILogger<FoodService> logger) : I
                 Tags = fe.FddbFood.Tags,
                 Nutrition = fe.FddbFood.Nutrition.ToNutritionInfo()
             })
-            .ToListAsync();
+            .ToList();
+
+        var totalDistinctCount = allEntries.DistinctBy(fe => fe.FddbFood.Id).Count();
+        var totalPages = (int)Math.Ceiling((double)totalDistinctCount / pageSize);
 
         return new FoodSearchResponse
         {
-            Foods = foods,
-            TotalCount = totalCount,
+            Foods = distinctFoods,
+            TotalCount = totalDistinctCount,
             Page = page,
             PageSize = pageSize,
             TotalPages = totalPages

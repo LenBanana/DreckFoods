@@ -9,6 +9,7 @@ public class FddbFoodImportDTO
     public string Description { get; set; }
     public string ImageUrl { get; set; }
     public string Brand { get; set; }
+    public string? Ean { get; set; }
     public List<string> Tags { get; set; } = new();
     public NutritionInfo Nutrition { get; set; } = new();
 }
