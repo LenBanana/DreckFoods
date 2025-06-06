@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using FoodDbAPI.DTOs.Base;
 using FoodDbAPI.Models.Fddb;
 
 namespace FoodDbAPI.DTOs;
@@ -49,11 +50,8 @@ public class FoodSearchDto
     public NutritionInfo Nutrition { get; set; } = new();
 }
 
-public class FoodSearchResponse
+public class FoodSearchResponse : PaginatedResponse
 {
     public List<FoodSearchDto> Foods { get; set; } = new();
     public int TotalCount { get; set; }
-    public int Page { get; set; }
-    public int PageSize { get; set; }
-    public int TotalPages { get; set; }
 }

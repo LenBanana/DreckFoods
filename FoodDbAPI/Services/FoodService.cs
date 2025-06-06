@@ -55,6 +55,44 @@ public class FoodService(FoodDbContext context, ILogger<FoodService> logger) : I
             TotalPages = totalPages
         };
     }
+    
+    public async Task<FoodSearchResponse> GetPastEatenFoodsAsync(int userId, int page = 1, int pageSize = 20)
+    {
+        var query = context.FoodEntries
+            .Where(fe => fe.UserId == userId)
+            .Include(fe => fe.FddbFood)
+            .ThenInclude(f => f.Nutrition)
+            .AsQueryable();
+
+        var totalCount = await query.CountAsync();
+        var totalPages = (int)Math.Ceiling((double)totalCount / pageSize);
+
+        var foods = await query
+            .OrderByDescending(fe => fe.ConsumedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(fe => new FoodSearchDto
+            {
+                Id = fe.FddbFood.Id,
+                Name = WebUtility.HtmlDecode(fe.FddbFood.Name),
+                Url = fe.FddbFood.Url,
+                Description = fe.FddbFood.Description,
+                ImageUrl = fe.FddbFood.ImageUrl,
+                Brand = fe.FddbFood.Brand,
+                Tags = fe.FddbFood.Tags,
+                Nutrition = fe.FddbFood.Nutrition.ToNutritionInfo()
+            })
+            .ToListAsync();
+
+        return new FoodSearchResponse
+        {
+            Foods = foods,
+            TotalCount = totalCount,
+            Page = page,
+            PageSize = pageSize,
+            TotalPages = totalPages
+        };
+    }
 
     private IQueryable<FddbFood> ApplySearchFilters(IQueryable<FddbFood> query, string searchQuery)
     {

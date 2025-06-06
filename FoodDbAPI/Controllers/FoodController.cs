@@ -166,4 +166,28 @@ public class FoodController(IFoodService foodService, ILogger<FoodController> lo
             return StatusCode(500, new { message = "An error occurred" });
         }
     }
+
+    [HttpGet("past-eaten")]
+    public async Task<ActionResult<List<DailyTimelineDto>>> GetPastEatenFoods(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20)
+    {
+        try
+        {
+            if (pageSize > 100)
+                pageSize = 100;
+            var userId = User.GetUserId();
+            var pastFoods = await foodService.GetPastEatenFoodsAsync(userId, page, pageSize);
+            return Ok(pastFoods);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error getting past eaten foods");
+            return StatusCode(500, new { message = "An error occurred" });
+        }
+    }
 }
