@@ -166,7 +166,7 @@ public class FoodService(
     {
         return new FoodSearchDto
         {
-            Id = 0, // Temporary ID for scraped items not yet in database
+            Id = 0,
             Name = WebUtility.HtmlDecode(dto.Name),
             Url = dto.Url,
             Description = dto.Description,

@@ -16,7 +16,7 @@ public class FddbScrapingService(HttpClient httpClient, ILogger<FddbScrapingServ
         
         try
         {
-            using var response = await httpClient.GetAsync(searchUrl, cancellationToken);
+            var response = await httpClient.GetAsync(searchUrl, cancellationToken);
             
             if (!response.IsSuccessStatusCode)
             {
@@ -87,7 +87,7 @@ public class FddbScrapingService(HttpClient httpClient, ILogger<FddbScrapingServ
         {
             try
             {
-                using var response = await httpClient.GetAsync(
+                var response = await httpClient.GetAsync(
                     uri, HttpCompletionOption.ResponseContentRead, cancellationToken);
 
                 if (!response.IsSuccessStatusCode)
