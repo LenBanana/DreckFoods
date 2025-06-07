@@ -7,9 +7,12 @@ using FoodDbAPI.DTOs;
 using FoodDbAPI.Models;
 using FoodDbAPI.Models.Settings;
 using FoodDbAPI.Services.Interfaces;
+using Microsoft.AspNetCore.Identity.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using LoginRequest = FoodDbAPI.DTOs.LoginRequest;
+using RegisterRequest = FoodDbAPI.DTOs.RegisterRequest;
 
 namespace FoodDbAPI.Services;
 
@@ -102,6 +105,19 @@ public class AuthService(
         var token = GenerateJwtToken(user.Id, user.Email, user.Role);
         return new AuthResponse { Token = token, User = MapToUserProfileDto(user) };
     }
+    
+    public async Task<bool> DeleteUserAsync(int userId)
+    {
+        var user = await context.Users.FindAsync(userId);
+        if (user == null)
+            throw new UnauthorizedAccessException("User not found.");
+
+        context.Users.Remove(user);
+        await context.SaveChangesAsync();
+
+        logger.LogInformation("User deleted: {Email}", user.Email);
+        return true;
+    }
 
     public async Task<bool> ConfirmEmailAsync(ConfirmEmailRequest request)
     {
@@ -117,6 +133,87 @@ public class AuthService(
         await context.SaveChangesAsync();
 
         logger.LogInformation("Email confirmed for user: {Email}", user.Email);
+        return true;
+    }
+    
+    public async Task<bool> ChangePasswordAsync(int userId, ChangePasswordRequest request)
+    {
+        var user = await context.Users.FindAsync(userId);
+        if (user == null)
+            throw new UnauthorizedAccessException("User not found.");
+
+        if (!BCrypt.Net.BCrypt.Verify(request.OldPassword, user.PasswordHash))
+            throw new ArgumentException("Old password is incorrect.");
+
+        // update user with new password
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
+        user.UpdatedAt = DateTime.UtcNow;
+        await context.SaveChangesAsync();
+
+        logger.LogInformation("Password changed for user: {Email}", user.Email);
+        return true;
+    }
+    
+    public async Task<bool> ForgotPasswordAsync(ForgotPasswordRequest req)
+    {
+        var user = await context.Users.SingleOrDefaultAsync(u => u.Email == req.Email);
+        if (user is not { EmailConfirmed: true })
+            return false;
+
+        // generate a one-time token
+        var plainToken = Guid.NewGuid().ToString("N");
+        user.EmailTokenHash = BCrypt.Net.BCrypt.HashPassword(plainToken);
+        await context.SaveChangesAsync();
+
+        var link =
+            $"{frontendOpt.Value.BaseUrl.TrimEnd('/')}/auth/reset-password?userId={user.Id}&token={WebUtility.UrlEncode(plainToken)}";
+        var html = $$"""
+                     <html>
+                     <head>
+                       <meta charset='utf-8' />
+                       <style>
+                         body { font-family: Arial, sans-serif; background:#f4f4f4; }
+                         .container { max-width:600px; margin:30px auto; background:#fff; padding:20px; border-radius:8px; }
+                         .header { font-size:22px; font-weight:bold; color:#333; }
+                         .btn { display:inline-block; margin-top:20px; padding:12px 20px;
+                                 background:#007bff; color:#fff; text-decoration:none; border-radius:4px; }
+                         .footer { margin-top:30px; font-size:12px; color:#888; }
+                       </style>
+                     </head>
+                     <body>
+                       <div class='container'>
+                         <div class='header'>Reset your password</div>
+                         <p>Hi {{WebUtility.HtmlEncode(user.FirstName)}},</p>
+                         <p>We received a request to reset your password. Please click the button below to set a new password:</p>
+                         <a href='{{link}}' class='btn'>Reset Password</a>
+                         <p>If that doesn’t work, copy & paste this link into your browser:</p>
+                         <p><a href='{{link}}'>{{link}}</a></p>
+                         <div class='footer'>
+                           <p>If you didn’t request this, just ignore this email.</p>
+                         </div>
+                       </div>
+                     </body>
+                     </html>
+                     """;
+
+        await emailSender.SendEmailAsync(user.Email, "Reset your password", html);
+        return true;
+    }
+    
+    public async Task<bool> ResetPasswordAsync(ResetPasswordRequest request)
+    {
+        var user = await context.Users
+            .FirstOrDefaultAsync(u => u.Email == request.Email && u.EmailTokenHash != null);
+
+        if (user == null || !BCrypt.Net.BCrypt.Verify(request.ResetCode, user.EmailTokenHash))
+            return false;
+
+        // update user with new password
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
+        user.EmailTokenHash = null;
+        await context.SaveChangesAsync();
+
+        logger.LogInformation("Password reset for user: {Email}", user.Email);
         return true;
     }
 

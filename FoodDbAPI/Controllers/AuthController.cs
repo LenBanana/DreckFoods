@@ -2,7 +2,10 @@ using FoodDbAPI.DTOs;
 using FoodDbAPI.Extensions;
 using FoodDbAPI.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity.Data;
 using Microsoft.AspNetCore.Mvc;
+using LoginRequest = FoodDbAPI.DTOs.LoginRequest;
+using RegisterRequest = FoodDbAPI.DTOs.RegisterRequest;
 
 namespace FoodDbAPI.Controllers;
 
@@ -67,6 +70,85 @@ public class AuthController(IAuthService authService, ILogger<AuthController> lo
         {
             logger.LogError(ex, "Error confirming email");
             return StatusCode(500, new { message = "An error occurred while confirming email" });
+        }
+    }
+    
+    
+    [HttpPost("delete-account")]
+    [Authorize]
+    public async Task<IActionResult> DeleteAccount()
+    {
+        try
+        {
+            var userId = User.GetUserId();
+            var result = await authService.DeleteUserAsync(userId);
+            if (result)
+            {
+                return Ok(new { message = "Account deleted successfully" });
+            }
+            return BadRequest(new { message = "Failed to delete account" });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error deleting account");
+            return StatusCode(500, new { message = "An error occurred while deleting account" });
+        }
+    }
+    
+    [HttpPost("change-password")]
+    [Authorize]
+    public async Task<IActionResult> ChangePassword(ChangePasswordRequest req)
+    {
+        try
+        {
+            var userId = User.GetUserId();
+            var result = await authService.ChangePasswordAsync(userId, req);
+            if (result)
+            {
+                return Ok(new { message = "Password changed successfully" });
+            }
+            return BadRequest(new { message = "Invalid current password or new password" });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error changing password");
+            return StatusCode(500, new { message = "An error occurred while changing password" });
+        }
+    }
+    
+    [HttpPost("forgot-password")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ForgotPassword(ForgotPasswordRequest req)
+    {
+        try
+        {
+            var result = await authService.ForgotPasswordAsync(req);
+            return Ok(new { message = "Forgot password request processed" });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error processing forgot password request");
+            return StatusCode(500, new { message = "An error occurred while processing forgot password" });
+        }
+    }
+    
+    [HttpPost("reset-password")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ResetPassword(ResetPasswordRequest req)
+    {
+        try
+        {
+            var result = await authService.ResetPasswordAsync(req);
+            if (result)
+            {
+                return Ok(new { message = "Password reset successfully" });
+            }
+            return BadRequest(new { message = "Invalid reset token or password" });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error resetting password");
+            return StatusCode(500, new { message = "An error occurred while resetting password" });
         }
     }
 }

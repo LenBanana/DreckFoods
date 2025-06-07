@@ -34,3 +34,18 @@ public class AuthResponse
     public string Token { get; set; } = string.Empty;
     public UserProfileDto User { get; set; } = null!;
 }
+
+public class ChangePasswordRequest
+{
+    [Required]
+    [EmailAddress]
+    public string Email { get; set; } = string.Empty;
+
+    [Required]
+    [MinLength(6)]
+    public string OldPassword { get; set; } = string.Empty;
+
+    [Required]
+    [MinLength(6)]
+    public string NewPassword { get; set; } = string.Empty;
+}
