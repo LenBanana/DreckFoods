@@ -39,11 +39,11 @@ public class FoodService(
 
             if (scrapedFoods.Count > 0)
             {
-                // Save scraped foods to database for future searches
-                await SaveScrapedFoodsToDatabaseAsync(scrapedFoods);
+                // Save scraped foods to database for future searches and get the saved entities with IDs
+                var savedFoods = await SaveScrapedFoodsToDatabaseAsync(scrapedFoods);
 
-                // Convert scraped foods to DTOs and return
-                var foodDtos = scrapedFoods.Select(MapScrapedFoodToDto).ToList();
+                // Convert saved foods (with proper IDs) to DTOs and return
+                var foodDtos = savedFoods.Select(MapSavedFoodToDto).ToList();
 
                 return new FoodSearchResponse
                 {
@@ -71,6 +71,21 @@ public class FoodService(
             Page = page,
             PageSize = pageSize,
             TotalPages = 0
+        };
+    }
+
+    private static FoodSearchDto MapSavedFoodToDto(FddbFood food)
+    {
+        return new FoodSearchDto
+        {
+            Id = food.Id,
+            Name = WebUtility.HtmlDecode(food.Name),
+            Url = food.Url,
+            Description = food.Description,
+            ImageUrl = food.ImageUrl,
+            Brand = food.Brand,
+            Tags = food.Tags,
+            Nutrition = food.Nutrition.ToNutritionInfo()
         };
     }
 
@@ -119,7 +134,7 @@ public class FoodService(
         };
     }
 
-    private async Task SaveScrapedFoodsToDatabaseAsync(List<FddbFoodImportDTO> scrapedFoods)
+    private async Task<List<FddbFood>> SaveScrapedFoodsToDatabaseAsync(List<FddbFoodImportDTO> scrapedFoods)
     {
         try
         {
@@ -133,17 +148,31 @@ public class FoodService(
                 .Select(MapImportDtoToEntity)
                 .ToList();
 
+            var savedFoods = new List<FddbFood>();
+
             if (newFoods.Count > 0)
             {
                 context.FddbFoods.AddRange(newFoods);
                 await context.SaveChangesAsync();
+                savedFoods.AddRange(newFoods);
 
                 logger.LogInformation("Saved {Count} new foods to database", newFoods.Count);
             }
+
+            // Also get existing foods that were already in the database
+            var existingFoods = await context.FddbFoods
+                .Include(f => f.Nutrition)
+                .Where(f => existingUrls.Contains(f.Url))
+                .ToListAsync();
+
+            savedFoods.AddRange(existingFoods);
+
+            return savedFoods;
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error saving scraped foods to database");
+            return [];
         }
     }
 
@@ -159,21 +188,6 @@ public class FoodService(
             Ean = dto.Ean,
             Tags = dto.Tags,
             Nutrition = FddbFoodNutrition.FromNutritionInfo(dto.Nutrition)
-        };
-    }
-
-    private static FoodSearchDto MapScrapedFoodToDto(FddbFoodImportDTO dto)
-    {
-        return new FoodSearchDto
-        {
-            Id = 0,
-            Name = WebUtility.HtmlDecode(dto.Name),
-            Url = dto.Url,
-            Description = dto.Description,
-            ImageUrl = dto.ImageUrl,
-            Brand = dto.Brand,
-            Tags = dto.Tags,
-            Nutrition = dto.Nutrition
         };
     }
 
