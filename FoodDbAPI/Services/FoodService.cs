@@ -108,6 +108,7 @@ public class FoodService(FoodDbContext context, ILogger<FoodService> logger) : I
         return searchTerms.Aggregate(query,
             (current, currentTerm) => current.Where(f =>
                 EF.Functions.ILike(f.Name, $"%{currentTerm}%") || EF.Functions.ILike(f.Brand, $"%{currentTerm}%") ||
+                (f.Ean != null && EF.Functions.ILike(f.Ean, $"%{currentTerm}%")) ||
                 EF.Functions.ILike(f.Description, $"%{currentTerm}%")));
     }
 
