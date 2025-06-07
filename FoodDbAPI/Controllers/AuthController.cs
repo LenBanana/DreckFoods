@@ -74,7 +74,7 @@ public class AuthController(IAuthService authService, ILogger<AuthController> lo
     }
     
     
-    [HttpPost("delete-account")]
+    [HttpDelete("delete-account")]
     [Authorize]
     public async Task<IActionResult> DeleteAccount()
     {
