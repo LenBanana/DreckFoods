@@ -166,7 +166,7 @@ public class AuthService(
         await context.SaveChangesAsync();
 
         var link =
-            $"{frontendOpt.Value.BaseUrl.TrimEnd('/')}/auth/reset-password?userId={user.Id}&token={WebUtility.UrlEncode(plainToken)}";
+            $"{frontendOpt.Value.BaseUrl.TrimEnd('/')}/auth/reset-password?email={user.Email}&code={WebUtility.UrlEncode(plainToken)}";
         var html = $$"""
                      <html>
                      <head>

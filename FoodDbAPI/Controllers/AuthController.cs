@@ -123,7 +123,11 @@ public class AuthController(IAuthService authService, ILogger<AuthController> lo
         try
         {
             var result = await authService.ForgotPasswordAsync(req);
-            return Ok(new { message = "Forgot password request processed" });
+            if (result)
+            {
+                return Ok(new { message = "Password reset link sent to your email" });
+            }
+            return BadRequest(new { message = "Email not found or invalid request" });
         }
         catch (Exception ex)
         {
