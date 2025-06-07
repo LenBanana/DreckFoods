@@ -96,21 +96,15 @@ builder.Services.AddCors(options =>
         });
 });
 
-var handler = new SocketsHttpHandler
-{
-    PooledConnectionLifetime = TimeSpan.FromMinutes(15),
-    MaxConnectionsPerServer = 50,
-    AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate,
-};
-
 // Register services
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IWeightService, WeightService>();
 builder.Services.AddHttpClient<IFddbScrapingService, FddbScrapingService>(client =>
 {
-    client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:139.0) Gecko/20100101 Firefox/139.0");
-}).ConfigurePrimaryHttpMessageHandler(() => handler);
+    client.DefaultRequestHeaders.Add("User-Agent",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:139.0) Gecko/20100101 Firefox/139.0");
+});
 builder.Services.AddScoped<IFoodService, FoodService>();
 builder.Services.AddScoped<IDataImportService, DataImportService>();
 builder.Services.AddTransient<IEmailSender, EmailSender>();
