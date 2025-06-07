@@ -9,7 +9,10 @@ using Microsoft.EntityFrameworkCore;
 
 namespace FoodDbAPI.Services;
 
-public class FoodService(FoodDbContext context, ILogger<FoodService> logger) : IFoodService
+public class FoodService(
+    FoodDbContext context,
+    ILogger<FoodService> logger,
+    IFddbScrapingService scrapingService) : IFoodService
 {
     public async Task<FoodSearchResponse> SearchFoodsAsync(
         string query,
@@ -17,6 +20,66 @@ public class FoodService(FoodDbContext context, ILogger<FoodService> logger) : I
         int pageSize = 20,
         FoodSortBy sortBy = FoodSortBy.Name,
         SortDirection sortDirection = SortDirection.Ascending)
+    {
+        // First, search in the database
+        var dbResults = await SearchFoodsInDatabaseAsync(query, page, pageSize, sortBy, sortDirection);
+
+        // If we have results or we're on a page other than the first, return the database results
+        if (dbResults.Foods.Count > 0 || page > 1)
+        {
+            return dbResults;
+        }
+
+        logger.LogInformation("No database results found for '{Query}', attempting to scrape", query);
+
+        try
+        {
+            // Fallback to scraping if no database results on first page
+            var scrapedFoods = await scrapingService.FindFoodItemByNameAsync(query);
+
+            if (scrapedFoods.Count > 0)
+            {
+                // Save scraped foods to database for future searches
+                await SaveScrapedFoodsToDatabaseAsync(scrapedFoods);
+
+                // Convert scraped foods to DTOs and return
+                var foodDtos = scrapedFoods.Select(MapScrapedFoodToDto).ToList();
+
+                return new FoodSearchResponse
+                {
+                    Foods = ApplySortingToScrapedFoods(foodDtos, sortBy, sortDirection)
+                        .Skip((page - 1) * pageSize)
+                        .Take(pageSize)
+                        .ToList(),
+                    TotalCount = foodDtos.Count,
+                    Page = page,
+                    PageSize = pageSize,
+                    TotalPages = (int)Math.Ceiling((double)foodDtos.Count / pageSize)
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error occurred while scraping foods for query '{Query}'", query);
+        }
+
+        // Return empty results if both database and scraping failed
+        return new FoodSearchResponse
+        {
+            Foods = [],
+            TotalCount = 0,
+            Page = page,
+            PageSize = pageSize,
+            TotalPages = 0
+        };
+    }
+
+    private async Task<FoodSearchResponse> SearchFoodsInDatabaseAsync(
+        string query,
+        int page,
+        int pageSize,
+        FoodSortBy sortBy,
+        SortDirection sortDirection)
     {
         var searchQuery = context.FddbFoods
             .Include(f => f.Nutrition)
@@ -55,7 +118,94 @@ public class FoodService(FoodDbContext context, ILogger<FoodService> logger) : I
             TotalPages = totalPages
         };
     }
-    
+
+    private async Task SaveScrapedFoodsToDatabaseAsync(List<FddbFoodImportDTO> scrapedFoods)
+    {
+        try
+        {
+            var existingUrls = await context.FddbFoods
+                .Where(f => scrapedFoods.Select(s => s.Url).Contains(f.Url))
+                .Select(f => f.Url)
+                .ToListAsync();
+
+            var newFoods = scrapedFoods
+                .Where(f => !existingUrls.Contains(f.Url))
+                .Select(MapImportDtoToEntity)
+                .ToList();
+
+            if (newFoods.Count > 0)
+            {
+                context.FddbFoods.AddRange(newFoods);
+                await context.SaveChangesAsync();
+
+                logger.LogInformation("Saved {Count} new foods to database", newFoods.Count);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error saving scraped foods to database");
+        }
+    }
+
+    private static FddbFood MapImportDtoToEntity(FddbFoodImportDTO dto)
+    {
+        return new FddbFood
+        {
+            Name = dto.Name,
+            Url = dto.Url,
+            Description = dto.Description,
+            ImageUrl = dto.ImageUrl,
+            Brand = dto.Brand,
+            Ean = dto.Ean,
+            Tags = dto.Tags,
+            Nutrition = FddbFoodNutrition.FromNutritionInfo(dto.Nutrition)
+        };
+    }
+
+    private static FoodSearchDto MapScrapedFoodToDto(FddbFoodImportDTO dto)
+    {
+        return new FoodSearchDto
+        {
+            Id = 0, // Temporary ID for scraped items not yet in database
+            Name = WebUtility.HtmlDecode(dto.Name),
+            Url = dto.Url,
+            Description = dto.Description,
+            ImageUrl = dto.ImageUrl,
+            Brand = dto.Brand,
+            Tags = dto.Tags,
+            Nutrition = dto.Nutrition
+        };
+    }
+
+    private static List<FoodSearchDto> ApplySortingToScrapedFoods(
+        List<FoodSearchDto> foods,
+        FoodSortBy sortBy,
+        SortDirection sortDirection)
+    {
+        return sortBy switch
+        {
+            FoodSortBy.Name => sortDirection == SortDirection.Ascending
+                ? foods.OrderBy(f => f.Name).ToList()
+                : foods.OrderByDescending(f => f.Name).ToList(),
+            FoodSortBy.Brand => sortDirection == SortDirection.Ascending
+                ? foods.OrderBy(f => f.Brand).ToList()
+                : foods.OrderByDescending(f => f.Brand).ToList(),
+            FoodSortBy.Calories => sortDirection == SortDirection.Ascending
+                ? foods.OrderBy(f => f.Nutrition.Calories.Value).ToList()
+                : foods.OrderByDescending(f => f.Nutrition.Calories.Value).ToList(),
+            FoodSortBy.Protein => sortDirection == SortDirection.Ascending
+                ? foods.OrderBy(f => f.Nutrition.Protein.Value).ToList()
+                : foods.OrderByDescending(f => f.Nutrition.Protein.Value).ToList(),
+            FoodSortBy.Carbs => sortDirection == SortDirection.Ascending
+                ? foods.OrderBy(f => f.Nutrition.Carbohydrates.Total.Value).ToList()
+                : foods.OrderByDescending(f => f.Nutrition.Carbohydrates.Total.Value).ToList(),
+            FoodSortBy.Fat => sortDirection == SortDirection.Ascending
+                ? foods.OrderBy(f => f.Nutrition.Fat.Value).ToList()
+                : foods.OrderByDescending(f => f.Nutrition.Fat.Value).ToList(),
+            _ => foods.OrderBy(f => f.Name).ToList()
+        };
+    }
+
     public async Task<FoodSearchResponse> GetPastEatenFoodsAsync(int userId, int page = 1, int pageSize = 20)
     {
         var allEntries = await context.FoodEntries
@@ -221,7 +371,7 @@ public class FoodService(FoodDbContext context, ILogger<FoodService> logger) : I
         return MapToFoodEntryDto(entry);
     }
 
-// Helper methods
+    // Helper methods
     private async Task<FddbFood> GetFoodWithNutritionAsync(int foodId)
     {
         var food = await context.FddbFoods
