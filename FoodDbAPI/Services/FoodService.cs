@@ -245,7 +245,7 @@ public class FoodService(
                 Nutrition = fe.FddbFood.Nutrition.ToNutritionInfo()
             })
             .ToList();
-        
+
         var totalDistinctCount = allEntries.DistinctBy(fe => fe.FddbFood.Id).Count();
         var totalPages = (int)Math.Ceiling((double)totalDistinctCount / pageSize);
 
@@ -270,10 +270,10 @@ public class FoodService(
             .ToArray();
 
         return searchTerms.Aggregate(query,
-            (current, currentTerm) => current.Where(f =>
-                EF.Functions.ILike(f.Name, $"%{currentTerm}%") || EF.Functions.ILike(f.Brand, $"%{currentTerm}%") ||
-                                   (f.Ean != null && EF.Functions.ILike(f.Ean, $"%{currentTerm}%")) ||
-                                   EF.Functions.ILike(f.Description, $"%{currentTerm}%")));
+            (current, term) => current.Where(f =>
+                EF.Functions.ILike(f.Name, $"%{term}%") || EF.Functions.ILike(f.Brand, $"%{term}%") ||
+                (f.Ean != null && EF.Functions.ILike(f.Ean, $"%{term}%")) ||
+                EF.Functions.ILike(f.Description, $"%{term}%")));
     }
 
     private IQueryable<FddbFood> ApplySorting(

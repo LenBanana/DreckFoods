@@ -51,7 +51,7 @@ public class FddbScrapingService(HttpClient httpClient, ILogger<FddbScrapingServ
             var foodDetails = new List<FddbFoodImportDto>();
             var urlRegex = new Regex(@"window\.location\.href='(/db/de/lebensmittel/[^']+)'");
             
-            foreach (var item in foodItems)
+            foreach (var item in foodItems.Take(25))
             {
                 var onclick = item.GetAttributeValue("onclick", string.Empty);
                 var urlMatch = urlRegex.Match(onclick);

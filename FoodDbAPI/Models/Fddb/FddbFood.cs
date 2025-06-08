@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using NpgsqlTypes;
 
 namespace FoodDbAPI.Models.Fddb;
 
@@ -18,7 +19,6 @@ public class FddbFood
     [MaxLength(200)] public string Brand { get; set; } = string.Empty;
 
     [MaxLength(50)] public string? Ean { get; set; }
-
     public List<string> Tags { get; set; } = [];
 
     // Navigation property for nutrition
