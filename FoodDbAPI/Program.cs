@@ -106,6 +106,7 @@ builder.Services.AddHttpClient<IFddbScrapingService, FddbScrapingService>(client
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:139.0) Gecko/20100101 Firefox/139.0");
 });
 builder.Services.AddScoped<IFoodService, FoodService>();
+builder.Services.AddScoped<IMealService, MealService>();
 builder.Services.AddScoped<IDataImportService, DataImportService>();
 builder.Services.AddTransient<IEmailSender, EmailSender>();
 
@@ -132,3 +133,4 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.Run();
+

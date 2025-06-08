@@ -8,7 +8,7 @@ namespace FoodDbAPI.Services;
 
 public class DataImportService(FoodDbContext context, ILogger<DataImportService> logger) : IDataImportService
 {
-    public async Task ImportFoodDataAsync(List<FddbFoodImportDTO> foods)
+    public async Task ImportFoodDataAsync(List<FddbFoodImportDto> foods)
     {
         const int batchSize = 1000;
         var totalBatches = (int)Math.Ceiling((double)foods.Count / batchSize);

@@ -5,6 +5,6 @@ namespace FoodDbAPI.Services.Interfaces;
 
 public interface IDataImportService
 {
-    Task ImportFoodDataAsync(List<FddbFoodImportDTO> foods);
+    Task ImportFoodDataAsync(List<FddbFoodImportDto> foods);
     Task<int> GetFoodCountAsync();
 }

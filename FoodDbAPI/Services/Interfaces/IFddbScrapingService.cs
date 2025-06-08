@@ -4,5 +4,5 @@ namespace FoodDbAPI.Services.Interfaces;
 
 public interface IFddbScrapingService
 {
-    Task<List<FddbFoodImportDTO>> FindFoodItemByNameAsync(string foodName, CancellationToken cancellationToken = default);
+    Task<List<FddbFoodImportDto>> FindFoodItemByNameAsync(string foodName, CancellationToken cancellationToken = default);
 }

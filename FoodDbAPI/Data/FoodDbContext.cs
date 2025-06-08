@@ -13,6 +13,8 @@ public class FoodDbContext(DbContextOptions<FoodDbContext> options) : DbContext(
     public DbSet<FoodEntry> FoodEntries { get; set; }
     public DbSet<FddbFood> FddbFoods { get; set; }
     public DbSet<FddbFoodNutrition> FddbFoodNutritions { get; set; }
+    public DbSet<Meal> Meals { get; set; }
+    public DbSet<MealItem> MealItems { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -90,6 +92,49 @@ public class FoodDbContext(DbContextOptions<FoodDbContext> options) : DbContext(
         {
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.FddbFoodId).IsUnique();
+        });
+        
+        // Meal configuration
+        modelBuilder.Entity<Meal>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Name).HasMaxLength(200);
+            entity.Property(e => e.Description).HasMaxLength(1000);
+            
+            entity.HasOne(e => e.User)
+                .WithMany()
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+                
+            entity.Property(e => e.CreatedAt)
+                .HasConversion(
+                    v => v.ToUniversalTime(),
+                    v => DateTime.SpecifyKind(v, DateTimeKind.Utc));
+                    
+            entity.Property(e => e.UpdatedAt)
+                .HasConversion(
+                    v => v.ToUniversalTime(),
+                    v => DateTime.SpecifyKind(v, DateTimeKind.Utc));
+                    
+            entity.HasIndex(e => e.UserId);
+        });
+        
+        // MealItem configuration
+        modelBuilder.Entity<MealItem>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            
+            entity.HasOne(e => e.Meal)
+                .WithMany(m => m.MealItems)
+                .HasForeignKey(e => e.MealId)
+                .OnDelete(DeleteBehavior.Cascade);
+                
+            entity.HasOne(e => e.FddbFood)
+                .WithMany()
+                .HasForeignKey(e => e.FddbFoodId)
+                .OnDelete(DeleteBehavior.Restrict); // Prevent deletion of food items that are part of a meal
+                
+            entity.HasIndex(e => e.MealId);
         });
     }
 }

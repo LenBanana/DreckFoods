@@ -14,7 +14,7 @@ public class DataImportController(IDataImportService import) : ControllerBase
 {
     [HttpPost("import")]
     [DisableRequestSizeLimit]
-    public async Task<IActionResult> ImportFoods([FromBody] List<FddbFoodImportDTO> foods)
+    public async Task<IActionResult> ImportFoods([FromBody] List<FddbFoodImportDto> foods)
     {
         await import.ImportFoodDataAsync(foods);
         return Ok(new { imported = foods.Count });

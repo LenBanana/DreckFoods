@@ -81,7 +81,7 @@ public class FoodService(
             Id = food.Id,
             Name = WebUtility.HtmlDecode(food.Name),
             Url = food.Url,
-            Description = food.Description,
+            Description = WebUtility.HtmlDecode(food.Description),
             ImageUrl = food.ImageUrl,
             Brand = food.Brand,
             Tags = food.Tags,
@@ -116,7 +116,7 @@ public class FoodService(
                 Id = f.Id,
                 Name = WebUtility.HtmlDecode(f.Name),
                 Url = f.Url,
-                Description = f.Description,
+                Description = WebUtility.HtmlDecode(f.Description),
                 ImageUrl = f.ImageUrl,
                 Brand = f.Brand,
                 Tags = f.Tags,
@@ -134,7 +134,7 @@ public class FoodService(
         };
     }
 
-    private async Task<List<FddbFood>> SaveScrapedFoodsToDatabaseAsync(List<FddbFoodImportDTO> scrapedFoods)
+    private async Task<List<FddbFood>> SaveScrapedFoodsToDatabaseAsync(List<FddbFoodImportDto> scrapedFoods)
     {
         try
         {
@@ -176,7 +176,7 @@ public class FoodService(
         }
     }
 
-    private static FddbFood MapImportDtoToEntity(FddbFoodImportDTO dto)
+    private static FddbFood MapImportDtoToEntity(FddbFoodImportDto dto)
     {
         return new FddbFood
         {
@@ -245,7 +245,7 @@ public class FoodService(
                 Nutrition = fe.FddbFood.Nutrition.ToNutritionInfo()
             })
             .ToList();
-
+        
         var totalDistinctCount = allEntries.DistinctBy(fe => fe.FddbFood.Id).Count();
         var totalPages = (int)Math.Ceiling((double)totalDistinctCount / pageSize);
 
@@ -272,8 +272,8 @@ public class FoodService(
         return searchTerms.Aggregate(query,
             (current, currentTerm) => current.Where(f =>
                 EF.Functions.ILike(f.Name, $"%{currentTerm}%") || EF.Functions.ILike(f.Brand, $"%{currentTerm}%") ||
-                (f.Ean != null && EF.Functions.ILike(f.Ean, $"%{currentTerm}%")) ||
-                EF.Functions.ILike(f.Description, $"%{currentTerm}%")));
+                                   (f.Ean != null && EF.Functions.ILike(f.Ean, $"%{currentTerm}%")) ||
+                                   EF.Functions.ILike(f.Description, $"%{currentTerm}%")));
     }
 
     private IQueryable<FddbFood> ApplySorting(

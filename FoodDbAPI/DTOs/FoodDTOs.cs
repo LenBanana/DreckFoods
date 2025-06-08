@@ -50,8 +50,27 @@ public class FoodSearchDto
     public NutritionInfo Nutrition { get; set; } = new();
 }
 
+public class FoodEntryResponseDto
+{
+    public int Id { get; set; }
+    public string FoodName { get; set; } = string.Empty;
+    public string? FoodUrl { get; set; }
+    public string? Brand { get; set; }
+    public string? ImageUrl { get; set; }
+    public double GramsConsumed { get; set; }
+    public double Calories { get; set; }
+    public double Protein { get; set; }
+    public double Fat { get; set; }
+    public double Carbohydrates { get; set; }
+    public double Fiber { get; set; }
+    public double Sugar { get; set; }
+    public DateTime ConsumedAt { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
 public class FoodSearchResponse : PaginatedResponse
 {
     public List<FoodSearchDto> Foods { get; set; } = new();
     public int TotalCount { get; set; }
 }
+

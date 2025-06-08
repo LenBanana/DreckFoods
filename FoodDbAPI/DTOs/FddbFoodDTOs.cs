@@ -2,7 +2,7 @@ using FoodDbAPI.Models.Fddb;
 
 namespace FoodDbAPI.DTOs;
 
-public class FddbFoodImportDTO
+public class FddbFoodImportDto
 {
     public string Name { get; set; }
     public string Url { get; set; }

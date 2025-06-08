@@ -8,7 +8,7 @@ namespace FoodDbAPI.Services;
 
 public class FddbScrapingService(HttpClient httpClient, ILogger<FddbScrapingService> logger) : IFddbScrapingService
 {
-    public async Task<List<FddbFoodImportDTO>> FindFoodItemByNameAsync(string foodName, CancellationToken cancellationToken = default)
+    public async Task<List<FddbFoodImportDto>> FindFoodItemByNameAsync(string foodName, CancellationToken cancellationToken = default)
     {
         logger.LogInformation("Searching for food item: {FoodName}", foodName);
 
@@ -48,7 +48,7 @@ public class FddbScrapingService(HttpClient httpClient, ILogger<FddbScrapingServ
             }
 
             // Extract every URL from the onclick attribute and use the ParseFoodItem method to get details
-            var foodDetails = new List<FddbFoodImportDTO>();
+            var foodDetails = new List<FddbFoodImportDto>();
             var urlRegex = new Regex(@"window\.location\.href='(/db/de/lebensmittel/[^']+)'");
             
             foreach (var item in foodItems)
@@ -77,7 +77,7 @@ public class FddbScrapingService(HttpClient httpClient, ILogger<FddbScrapingServ
         }
     }
 
-    private async Task<FddbFoodImportDTO?> ProcessUrlWithRetryAsync(
+    private async Task<FddbFoodImportDto?> ProcessUrlWithRetryAsync(
         string url, int maxRetries, CancellationToken cancellationToken)
     {
         var attempts = 0;
@@ -125,12 +125,12 @@ public class FddbScrapingService(HttpClient httpClient, ILogger<FddbScrapingServ
         return null;
     }
 
-    private FddbFoodImportDTO ParseFoodItem(string html, string uri)
+    private FddbFoodImportDto ParseFoodItem(string html, string uri)
     {
         var doc = new HtmlDocument();
         doc.LoadHtml(html);
 
-        return new FddbFoodImportDTO
+        return new FddbFoodImportDto
         {
             Url = uri,
             Name = doc.DocumentNode.SelectSingleNode("//h1[@id='fddb-headline1']")
