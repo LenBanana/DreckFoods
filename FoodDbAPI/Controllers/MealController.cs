@@ -1,4 +1,3 @@
-using FoodDbAPI.Data;
 using FoodDbAPI.DTOs;
 using FoodDbAPI.Extensions;
 using FoodDbAPI.Services.Interfaces;
@@ -109,12 +108,12 @@ public class MealController(IMealService mealService) : ControllerBase
         {
             var userId = User.GetUserId();
             var result = await mealService.DeleteMealAsync(id, userId);
-            
+
             if (result)
             {
                 return NoContent();
             }
-            
+
             return NotFound("Meal not found");
         }
         catch (Exception ex)
@@ -145,6 +144,54 @@ public class MealController(IMealService mealService) : ControllerBase
         catch (InvalidOperationException ex)
         {
             return BadRequest(ex.Message);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, $"Internal server error: {ex.Message}");
+        }
+    }
+
+    [HttpGet("{mealId}/share")]
+    [Authorize]
+    public ActionResult<string> GetMealShareId(int mealId)
+    {
+        try
+        {
+            var userId = User.GetUserId();
+            var shareId = mealService.GetMealShareId(mealId, userId);
+            return Ok(shareId);
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound("Meal not found");
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, $"Internal server error: {ex.Message}");
+        }
+    }
+
+    [HttpPost("{shareId}/share")]
+    [Authorize]
+    public async Task<ActionResult<MealResponseDto>> AddMealByShareId(string shareId)
+    {
+        try
+        {
+            var userId = User.GetUserId();
+            var meal = await mealService.AddMealByShareIdAsync(shareId, userId);
+            return CreatedAtAction(nameof(GetMealById), new { id = meal.Id }, meal);
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound("Shared meal not found");
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(ex.Message);
         }
         catch (Exception ex)
         {

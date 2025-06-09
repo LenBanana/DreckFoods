@@ -1,13 +1,15 @@
+using System.Security.Cryptography;
+using System.Text;
 using FoodDbAPI.Data;
 using FoodDbAPI.DTOs;
 using FoodDbAPI.Models;
-using FoodDbAPI.Models.Fddb;
 using FoodDbAPI.Services.Interfaces;
 using Microsoft.EntityFrameworkCore;
 
 namespace FoodDbAPI.Services;
 
-public class MealService(FoodDbContext context, IFoodService foodService) : IMealService
+public class MealService(FoodDbContext context, IFoodService foodService, IConfiguration configuration)
+    : IMealService
 {
     public async Task<MealResponseDto> CreateMealAsync(int userId, CreateMealDto createMealDto)
     {
@@ -36,15 +38,13 @@ public class MealService(FoodDbContext context, IFoodService foodService) : IMea
         await context.SaveChangesAsync();
 
         // Add meal items
-        foreach (var item in createMealDto.Items)
+        foreach (var mealItem in createMealDto.Items.Select(item => new MealItem
+                 {
+                     MealId = meal.Id,
+                     FddbFoodId = item.FddbFoodId,
+                     Weight = item.Weight
+                 }))
         {
-            var mealItem = new MealItem
-            {
-                MealId = meal.Id,
-                FddbFoodId = item.FddbFoodId,
-                Weight = item.Weight
-            };
-
             context.MealItems.Add(mealItem);
         }
 
@@ -54,12 +54,115 @@ public class MealService(FoodDbContext context, IFoodService foodService) : IMea
         return await GetMealByIdAsync(meal.Id, userId);
     }
 
+    public string GetMealShareId(int mealId, int userId)
+    {
+        var shareSecret = configuration.GetValue<string>("ShareSettings:Secret");
+        if (string.IsNullOrEmpty(shareSecret))
+            throw new InvalidOperationException("Share secret is not configured");
+
+        var payload = $"{mealId}:{userId}";
+        using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(shareSecret));
+        var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(payload));
+        var signature = Convert.ToBase64String(hash);
+
+        var token = $"{payload}:{signature}";
+        return Convert.ToBase64String(Encoding.UTF8.GetBytes(token));
+    }
+
+    public async Task<MealResponseDto> AddMealByShareIdAsync(string shareId, int userId)
+    {
+        try
+        {
+            var shareSecret = configuration.GetValue<string>("ShareSettings:Secret");
+            if (string.IsNullOrEmpty(shareSecret))
+                throw new InvalidOperationException("Share secret is not configured");
+
+            var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(shareId));
+            var parts = decoded.Split(':');
+
+            if (parts.Length != 3 ||
+                !int.TryParse(parts[0], out var mealId) ||
+                !int.TryParse(parts[1], out var sharedUserId))
+                throw new ArgumentException("Invalid share ID format");
+
+            var payload = $"{parts[0]}:{parts[1]}";
+            using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(shareSecret));
+            var expectedHash = hmac.ComputeHash(Encoding.UTF8.GetBytes(payload));
+            var expectedSignature = Convert.ToBase64String(expectedHash);
+
+            if (!CryptographicOperations.FixedTimeEquals(
+                    Convert.FromBase64String(expectedSignature),
+                    Convert.FromBase64String(parts[2])))
+            {
+                throw new ArgumentException("Invalid share ID signature");
+            }
+
+            // Check if the meal belongs to the shared user
+            var sharedMeal = await context.Meals
+                .Include(m => m.MealItems) // Ensure meal items are loaded
+                .FirstOrDefaultAsync(m => m.Id == mealId && m.UserId == sharedUserId);
+
+            if (sharedMeal == null)
+            {
+                throw new KeyNotFoundException("Shared meal not found");
+            }
+
+            // Check if the current user already has a meal with this name (potential duplicate)
+            var existingMeal = await context.Meals
+                .FirstOrDefaultAsync(m => m.UserId == userId && m.Name == sharedMeal.Name);
+
+            if (existingMeal != null)
+            {
+                throw new InvalidOperationException(
+                    "You already have a meal with this name. Please delete it first or use a different share code.");
+            }
+
+            // Create a new meal for the current user
+            var newMeal = new Meal
+            {
+                Name = sharedMeal.Name,
+                Description = sharedMeal.Description,
+                UserId = userId,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            context.Meals.Add(newMeal);
+            await context.SaveChangesAsync();
+
+            // Copy meal items to the new meal
+            if (sharedMeal.MealItems.Count == 0)
+                return await GetMealByIdAsync(newMeal.Id, userId);
+
+            foreach (var item in sharedMeal.MealItems)
+            {
+                var newMealItem = new MealItem
+                {
+                    MealId = newMeal.Id,
+                    FddbFoodId = item.FddbFoodId,
+                    Weight = item.Weight
+                };
+
+                context.MealItems.Add(newMealItem);
+            }
+
+            await context.SaveChangesAsync();
+
+            // Return the newly created meal
+            return await GetMealByIdAsync(newMeal.Id, userId);
+        }
+        catch (FormatException)
+        {
+            throw new ArgumentException("Invalid share ID format");
+        }
+    }
+
     public async Task<MealResponseDto> GetMealByIdAsync(int mealId, int userId)
     {
         var meal = await context.Meals
             .Include(m => m.MealItems)
-                .ThenInclude(mi => mi.FddbFood)
-                    .ThenInclude(f => f.Nutrition)
+            .ThenInclude(mi => mi.FddbFood)
+            .ThenInclude(f => f.Nutrition)
             .FirstOrDefaultAsync(m => m.Id == mealId && m.UserId == userId);
 
         if (meal == null)
@@ -74,8 +177,8 @@ public class MealService(FoodDbContext context, IFoodService foodService) : IMea
     {
         var meals = await context.Meals
             .Include(m => m.MealItems)
-                .ThenInclude(mi => mi.FddbFood)
-                    .ThenInclude(f => f.Nutrition)
+            .ThenInclude(mi => mi.FddbFood)
+            .ThenInclude(f => f.Nutrition)
             .Where(m => m.UserId == userId)
             .OrderByDescending(m => m.UpdatedAt)
             .ToListAsync();
@@ -162,8 +265,8 @@ public class MealService(FoodDbContext context, IFoodService foodService) : IMea
     {
         var meal = await context.Meals
             .Include(m => m.MealItems)
-                .ThenInclude(mi => mi.FddbFood)
-                    .ThenInclude(f => f.Nutrition)
+            .ThenInclude(mi => mi.FddbFood)
+            .ThenInclude(f => f.Nutrition)
             .FirstOrDefaultAsync(m => m.Id == addMealPortionDto.MealId && m.UserId == userId);
 
         if (meal == null)
@@ -173,7 +276,7 @@ public class MealService(FoodDbContext context, IFoodService foodService) : IMea
 
         // Calculate total meal weight
         var totalMealWeight = meal.MealItems.Sum(mi => mi.Weight);
-        
+
         if (totalMealWeight <= 0)
         {
             throw new InvalidOperationException("Meal has no items or total weight is zero");
@@ -188,10 +291,10 @@ public class MealService(FoodDbContext context, IFoodService foodService) : IMea
         {
             // Calculate the proportion of this item in the meal
             var proportion = mealItem.Weight / totalMealWeight;
-            
+
             // Calculate how much of this item should be in the consumed portion
             var gramsConsumed = proportion * addMealPortionDto.Weight;
-            
+
             // Create food entry via the food service
             var createFoodEntryRequest = new CreateFoodEntryRequest
             {
@@ -199,7 +302,7 @@ public class MealService(FoodDbContext context, IFoodService foodService) : IMea
                 GramsConsumed = gramsConsumed,
                 ConsumedAt = consumedAt
             };
-            
+
             var foodEntry = await foodService.AddFoodEntryAsync(userId, createFoodEntryRequest);
             foodEntries.Add(foodEntry);
         }
@@ -212,7 +315,7 @@ public class MealService(FoodDbContext context, IFoodService foodService) : IMea
     {
         // Calculate total weight and nutrition values
         var totalWeight = meal.MealItems.Sum(mi => mi.Weight);
-        
+
         // Initialize nutrition totals
         double totalCalories = 0;
         double totalProtein = 0;

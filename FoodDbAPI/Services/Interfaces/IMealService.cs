@@ -10,4 +10,6 @@ public interface IMealService
     Task<MealResponseDto> UpdateMealAsync(int mealId, int userId, UpdateMealDto updateMealDto);
     Task<bool> DeleteMealAsync(int mealId, int userId);
     Task<List<FoodEntryDto>> AddMealPortionAsync(int userId, AddMealPortionDto addMealPortionDto);
+    string GetMealShareId(int mealId, int userId);
+    Task<MealResponseDto> AddMealByShareIdAsync(string shareId, int userId);
 }

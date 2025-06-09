@@ -12,4 +12,19 @@ public class FddbFoodImportDto
     public string? Ean { get; set; }
     public List<string> Tags { get; set; } = new();
     public NutritionInfo Nutrition { get; set; } = new();
+
+    public static FddbFood MapImportDtoToEntity(FddbFoodImportDto dto)
+    {
+        return new FddbFood
+        {
+            Name = dto.Name,
+            Url = dto.Url,
+            Description = dto.Description,
+            ImageUrl = dto.ImageUrl,
+            Brand = dto.Brand,
+            Ean = dto.Ean,
+            Tags = dto.Tags,
+            Nutrition = FddbFoodNutrition.FromNutritionInfo(dto.Nutrition)
+        };
+    }
 }

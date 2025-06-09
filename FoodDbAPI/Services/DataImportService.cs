@@ -1,3 +1,4 @@
+using System.Net;
 using FoodDbAPI.Data;
 using FoodDbAPI.DTOs;
 using FoodDbAPI.Models.Fddb;
@@ -57,5 +58,75 @@ public class DataImportService(FoodDbContext context, ILogger<DataImportService>
     public async Task<int> GetFoodCountAsync()
     {
         return await context.FddbFoods.CountAsync();
+    }
+    
+    /// <summary>
+    /// Removes any ImageUrls that are not valid and fixes names and descriptions by HtmlDecoding them.
+    /// </summary>
+    public async Task<int> CleanupDataAsync()
+    {
+        var updatedCount = 0;
+        foreach (var food in context.FddbFoods)
+        {
+            var updated = false;
+
+            // Check and fix ImageUrl
+            if (!string.IsNullOrWhiteSpace(food.ImageUrl) && !Uri.IsWellFormedUriString(food.ImageUrl, UriKind.Absolute))
+            {
+                food.ImageUrl = string.Empty;
+                updated = true;
+            }
+
+            // HtmlDecode Name and Description
+            if (!string.IsNullOrWhiteSpace(food.Name))
+            {
+                var decodedName = WebUtility.HtmlDecode(food.Name);
+                if (decodedName != food.Name)
+                {
+                    food.Name = decodedName;
+                    updated = true;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(food.Description))
+            {
+                var decodedDescription = WebUtility.HtmlDecode(food.Description);
+                if (decodedDescription != food.Description)
+                {
+                    food.Description = decodedDescription;
+                    updated = true;
+                }
+            }
+            
+            // HtmlDecode Tags
+            if (food.Tags is { Count: > 0 })
+            {
+                for (var i = 0; i < food.Tags.Count; i++)
+                {
+                    var decodedTag = WebUtility.HtmlDecode(food.Tags[i]);
+                    if (decodedTag == food.Tags[i]) continue;
+                    food.Tags[i] = decodedTag;
+                    updated = true;
+                }
+            }
+            
+            // HtmlDecode Brand
+            if (!string.IsNullOrWhiteSpace(food.Brand))
+            {
+                var decodedBrand = WebUtility.HtmlDecode(food.Brand);
+                if (decodedBrand != food.Brand)
+                {
+                    food.Brand = decodedBrand;
+                    updated = true;
+                }
+            }
+
+            if (!updated) continue;
+            context.FddbFoods.Update(food);
+            updatedCount++;
+        }
+
+        await context.SaveChangesAsync();
+        return updatedCount;
     }
 }

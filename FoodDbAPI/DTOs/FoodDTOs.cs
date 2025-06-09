@@ -1,5 +1,8 @@
 using System.ComponentModel.DataAnnotations;
+using System.Net;
 using FoodDbAPI.DTOs.Base;
+using FoodDbAPI.DTOs.Enums;
+using FoodDbAPI.Models;
 using FoodDbAPI.Models.Fddb;
 
 namespace FoodDbAPI.DTOs;
@@ -20,6 +23,27 @@ public class FoodEntryDto
     public double Sugar { get; set; }
     public DateTime ConsumedAt { get; set; }
     public DateTime CreatedAt { get; set; }
+    
+    public static FoodEntryDto MapToFoodEntryDto(FoodEntry entry)
+    {
+        return new FoodEntryDto
+        {
+            Id = entry.Id,
+            FoodName = WebUtility.HtmlDecode(entry.FoodName),
+            FoodUrl = entry.FoodUrl,
+            Brand = entry.Brand,
+            ImageUrl = entry.ImageUrl,
+            GramsConsumed = entry.GramsConsumed,
+            Calories = entry.Calories,
+            Protein = entry.Protein,
+            Fat = entry.Fat,
+            Carbohydrates = entry.Carbohydrates,
+            Fiber = entry.Fiber,
+            Sugar = entry.Sugar,
+            ConsumedAt = entry.ConsumedAt,
+            CreatedAt = entry.CreatedAt
+        };
+    }
 }
 
 public class CreateFoodEntryRequest
@@ -48,6 +72,50 @@ public class FoodSearchDto
     public string Brand { get; set; } = string.Empty;
     public List<string> Tags { get; set; } = new();
     public NutritionInfo Nutrition { get; set; } = new();
+
+    public static FoodSearchDto MapSavedFoodToDto(FddbFood food)
+    {
+        return new FoodSearchDto
+        {
+            Id = food.Id,
+            Name = WebUtility.HtmlDecode(food.Name),
+            Url = food.Url,
+            Description = WebUtility.HtmlDecode(food.Description),
+            ImageUrl = food.ImageUrl,
+            Brand = food.Brand,
+            Tags = food.Tags,
+            Nutrition = food.Nutrition.ToNutritionInfo()
+        };
+    }
+
+    public static List<FoodSearchDto> ApplySortingToScrapedFoods(
+        List<FoodSearchDto> foods,
+        FoodSortBy sortBy,
+        SortDirection sortDirection)
+    {
+        return sortBy switch
+        {
+            FoodSortBy.Name => sortDirection == SortDirection.Ascending
+                ? foods.OrderBy(f => f.Name).ToList()
+                : foods.OrderByDescending(f => f.Name).ToList(),
+            FoodSortBy.Brand => sortDirection == SortDirection.Ascending
+                ? foods.OrderBy(f => f.Brand).ToList()
+                : foods.OrderByDescending(f => f.Brand).ToList(),
+            FoodSortBy.Calories => sortDirection == SortDirection.Ascending
+                ? foods.OrderBy(f => f.Nutrition.Calories.Value).ToList()
+                : foods.OrderByDescending(f => f.Nutrition.Calories.Value).ToList(),
+            FoodSortBy.Protein => sortDirection == SortDirection.Ascending
+                ? foods.OrderBy(f => f.Nutrition.Protein.Value).ToList()
+                : foods.OrderByDescending(f => f.Nutrition.Protein.Value).ToList(),
+            FoodSortBy.Carbs => sortDirection == SortDirection.Ascending
+                ? foods.OrderBy(f => f.Nutrition.Carbohydrates.Total.Value).ToList()
+                : foods.OrderByDescending(f => f.Nutrition.Carbohydrates.Total.Value).ToList(),
+            FoodSortBy.Fat => sortDirection == SortDirection.Ascending
+                ? foods.OrderBy(f => f.Nutrition.Fat.Value).ToList()
+                : foods.OrderByDescending(f => f.Nutrition.Fat.Value).ToList(),
+            _ => foods.OrderBy(f => f.Name).ToList()
+        };
+    }
 }
 
 public class FoodEntryResponseDto

@@ -1,6 +1,5 @@
 using FoodDbAPI.Data;
 using FoodDbAPI.DTOs;
-using FoodDbAPI.Models.Fddb;
 using FoodDbAPI.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -25,5 +24,13 @@ public class DataImportController(IDataImportService import) : ControllerBase
     {
         var count = await import.GetFoodCountAsync();
         return Ok(count);
+    }
+    
+    [HttpPost("cleanup")]
+    [Authorize(Roles = AppRoles.Admin)]
+    public async Task<IActionResult> CleanupData()
+    {
+        var cleanUpEntries =await import.CleanupDataAsync();
+        return Ok(new { message = $"Cleaned up {cleanUpEntries} entries." });
     }
 }
