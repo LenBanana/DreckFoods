@@ -2,7 +2,6 @@ namespace FoodDbAPI.Models.Fddb;
 
 public class FddbFoodNutrition
 {
-    
     public int Id { get; set; }
     public int FddbFoodId { get; set; }
 
@@ -61,6 +60,8 @@ public class FddbFoodNutrition
     public string FluorideUnit { get; set; } = string.Empty;
     public double IodineValue { get; set; }
     public string IodineUnit { get; set; } = string.Empty;
+    public double CaffeineValue { get; set; }
+    public string CaffeineUnit { get; set; } = string.Empty;
 
     // Navigation property
     public virtual FddbFood FddbFood { get; set; } = null!;
@@ -93,9 +94,10 @@ public class FddbFoodNutrition
                 Phosphorus = new NutritionalValue { Value = PhosphorusValue, Unit = PhosphorusUnit },
                 Copper = new NutritionalValue { Value = CopperValue, Unit = CopperUnit },
                 Fluoride = new NutritionalValue { Value = FluorideValue, Unit = FluorideUnit },
-                Iodine = new NutritionalValue { Value = IodineValue, Unit = IodineUnit }
+                Iodine = new NutritionalValue { Value = IodineValue, Unit = IodineUnit },
             },
-            Fiber = new NutritionalValue { Value = FiberValue, Unit = FiberUnit }
+            Fiber = new NutritionalValue { Value = FiberValue, Unit = FiberUnit },
+            Caffeine = new NutritionalValue { Value = CaffeineValue, Unit = CaffeineUnit }
         };
     }
 
@@ -144,7 +146,9 @@ public class FddbFoodNutrition
             FluorideValue = nutrition.Minerals.Fluoride.Value,
             FluorideUnit = nutrition.Minerals.Fluoride.Unit,
             IodineValue = nutrition.Minerals.Iodine.Value,
-            IodineUnit = nutrition.Minerals.Iodine.Unit
+            IodineUnit = nutrition.Minerals.Iodine.Unit,
+            CaffeineValue = nutrition.Caffeine.Value,
+            CaffeineUnit = nutrition.Caffeine.Unit
         };
     }
 }

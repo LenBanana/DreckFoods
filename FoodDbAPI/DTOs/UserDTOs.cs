@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using FoodDbAPI.Models;
 
 namespace FoodDbAPI.DTOs;
 
@@ -10,6 +11,7 @@ public class UserProfileDto
     public string LastName { get; set; } = string.Empty;
     public double? CurrentWeight { get; set; }
     public DateTime CreatedAt { get; set; }
+    public AppRole Role { get; set; } = AppRole.User;
 }
 
 public class UpdateUserProfileRequest

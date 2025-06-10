@@ -21,7 +21,8 @@ public class UserService(FoodDbContext context, ILogger<UserService> logger) : I
             FirstName = user.FirstName,
             LastName = user.LastName,
             CurrentWeight = user.CurrentWeight,
-            CreatedAt = user.CreatedAt
+            CreatedAt = user.CreatedAt,
+            Role = user.Role
         };
     }
 
@@ -49,7 +50,8 @@ public class UserService(FoodDbContext context, ILogger<UserService> logger) : I
             FirstName = user.FirstName,
             LastName = user.LastName,
             CurrentWeight = user.CurrentWeight,
-            CreatedAt = user.CreatedAt
+            CreatedAt = user.CreatedAt,
+            Role = user.Role
         };
     }
 }

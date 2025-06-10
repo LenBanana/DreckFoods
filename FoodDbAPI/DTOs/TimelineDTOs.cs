@@ -9,6 +9,7 @@ public class DailyTimelineDto
     public double TotalCarbohydrates { get; set; }
     public double TotalSugar { get; set; }
     public double TotalFiber { get; set; }
+    public double TotalCaffeine { get; set; }
     public List<FoodEntryDto> FoodEntries { get; set; } = new();
     public WeightEntryDto? WeightEntry { get; set; }
 }

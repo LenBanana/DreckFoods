@@ -31,6 +31,7 @@ public class FoodEntry
     public double Carbohydrates { get; set; }
     public double Fiber { get; set; }
     public double Sugar { get; set; }
+    public double Caffeine { get; set; }
 
     [Required]
     public DateTime ConsumedAt { get; set; }

@@ -21,6 +21,7 @@ public class FoodEntryDto
     public double Carbohydrates { get; set; }
     public double Fiber { get; set; }
     public double Sugar { get; set; }
+    public double Caffeine { get; set; }
     public DateTime ConsumedAt { get; set; }
     public DateTime CreatedAt { get; set; }
     
@@ -40,6 +41,7 @@ public class FoodEntryDto
             Carbohydrates = entry.Carbohydrates,
             Fiber = entry.Fiber,
             Sugar = entry.Sugar,
+            Caffeine = entry.Caffeine,
             ConsumedAt = entry.ConsumedAt,
             CreatedAt = entry.CreatedAt
         };
@@ -70,11 +72,14 @@ public class FoodSearchDto
     public string Description { get; set; } = string.Empty;
     public string ImageUrl { get; set; } = string.Empty;
     public string Brand { get; set; } = string.Empty;
+    public string? Ean { get; set; }
     public List<string> Tags { get; set; } = new();
     public NutritionInfo Nutrition { get; set; } = new();
 
-    public static FoodSearchDto MapSavedFoodToDto(FddbFood food)
+    public static FoodSearchDto? MapSavedFoodToDto(FddbFood? food)
     {
+        if (food == null)
+            return null;
         return new FoodSearchDto
         {
             Id = food.Id,
@@ -83,6 +88,7 @@ public class FoodSearchDto
             Description = WebUtility.HtmlDecode(food.Description),
             ImageUrl = food.ImageUrl,
             Brand = food.Brand,
+            Ean = food.Ean,
             Tags = food.Tags,
             Nutrition = food.Nutrition.ToNutritionInfo()
         };

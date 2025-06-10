@@ -48,6 +48,7 @@ public class TimelineService(
                 TotalCarbohydrates = dayFoodEntries.Sum(f => f.Carbohydrates),
                 TotalSugar = dayFoodEntries.Sum(f => f.Sugar),
                 TotalFiber = dayFoodEntries.Sum(f => f.Fiber),
+                TotalCaffeine = dayFoodEntries.Sum(f => f.Caffeine),
                 FoodEntries = dayFoodEntries.Select(FoodEntryDto.MapToFoodEntryDto).ToList(),
                 WeightEntry = dayWeightEntry != null
                     ? new WeightEntryDto

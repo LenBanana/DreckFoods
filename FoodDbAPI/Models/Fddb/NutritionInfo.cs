@@ -9,4 +9,5 @@ public class NutritionInfo
     public CarbohydrateInfo Carbohydrates { get; set; } = new();
     public MineralInfo Minerals { get; set; } = new();
     public NutritionalValue Fiber { get; set; } = new();
+    public NutritionalValue Caffeine { get; set; } = new();
 }

@@ -124,5 +124,6 @@ public class FoodEntryService(
         entry.Carbohydrates = nutrition.Carbohydrates.Total.Value * multiplier;
         entry.Fiber = nutrition.Fiber.Value * multiplier;
         entry.Sugar = nutrition.Carbohydrates.Sugar.Value * multiplier;
+        entry.Caffeine = nutrition.Caffeine?.Value * multiplier ?? 0.0;
     }
 }

@@ -100,6 +100,7 @@ builder.Services.AddCors(options =>
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IWeightService, WeightService>();
+builder.Services.AddScoped<IFddbEditorService, FddbEditorService>();
 builder.Services.AddHttpClient<IFddbScrapingService, FddbScrapingService>(client =>
 {
     client.DefaultRequestHeaders.Add("User-Agent",
