@@ -59,4 +59,15 @@ public class FddbEditorController(IFddbEditorService editorService) : Controller
             
         return Ok(new { Success = true, Message = "Food information and nutrition updated successfully" });
     }
+    
+    [HttpPost("{id}/update-user-entries")]
+    public async Task<IActionResult> UpdateUserEntries(int id)
+    {
+        var count = await editorService.UpdateUserEntriesForFoodAsync(id);
+        
+        if (count == 0)
+            return Ok(new { Success = true, Message = "No user entries found for this food item" });
+            
+        return Ok(new { Success = true, Message = $"Updated {count} user entries for this food item" });
+    }
 }
