@@ -154,6 +154,7 @@ public class FddbScrapingService(HttpClient httpClient, ILogger<FddbScrapingServ
                 Protein = ExtractNutritionalValue(doc, "Protein"),
                 Fat = ExtractNutritionalValue(doc, "Fett"),
                 Fiber = ExtractNutritionalValue(doc, "Ballaststoffe"),
+                Caffeine = ExtractNutritionalValue(doc, "Koffein"),
                 Carbohydrates = new Models.Fddb.CarbohydrateInfo
                 {
                     Total = ExtractNutritionalValue(doc, "Kohlenhydrate"),

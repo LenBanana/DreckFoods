@@ -34,11 +34,13 @@ public class DataImportService(FoodDbContext context, ILogger<DataImportService>
                      }))
             {
                 // Check if food already exists
-                var existingFood = await context.FddbFoods
+                var existingFood = await context.FddbFoods.Include(fddbFood => fddbFood.Nutrition)
                     .FirstOrDefaultAsync(f => f.Url == dbFood.Url || f.Ean == dbFood.Ean);
                 if (existingFood != null)
                 {
                     existingFood.Ean = dbFood.Ean;
+                    existingFood.Nutrition.CaffeineUnit = dbFood.Nutrition.CaffeineUnit;
+                    existingFood.Nutrition.CaffeineValue = dbFood.Nutrition.CaffeineValue;
                     context.FddbFoods.Update(existingFood);
                 }
                 else
