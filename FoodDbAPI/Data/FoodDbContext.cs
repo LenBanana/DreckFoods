@@ -2,6 +2,7 @@ using System.Text.Json;
 using FoodDbAPI.Models;
 using FoodDbAPI.Models.Fddb;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace FoodDbAPI.Data;
@@ -23,6 +24,11 @@ public class FoodDbContext(DbContextOptions<FoodDbContext> options) : DbContext(
         var stringListConverter = new ValueConverter<List<string>, string>(
             v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
             v => JsonSerializer.Deserialize<List<string>>(v, (JsonSerializerOptions?)null) ?? new List<string>());
+        
+        var stringListComparer = new ValueComparer<List<string>>(
+            (c1, c2) => c1!.SequenceEqual(c2!),
+            c => c.Aggregate(0, (a, v) => HashCode.Combine(a, v.GetHashCode())),
+            c => c.ToList());
 
         // User configuration
         modelBuilder.Entity<User>(entity =>
@@ -77,7 +83,7 @@ public class FoodDbContext(DbContextOptions<FoodDbContext> options) : DbContext(
             // Use the string list converter for Tags
             entity.Property(e => e.Tags)
                 .HasColumnName("TagsJson")
-                .HasConversion(stringListConverter)
+                .HasConversion(stringListConverter, stringListComparer)
                 .HasMaxLength(1000);
 
             // Configure the one-to-one relationship with nutrition
