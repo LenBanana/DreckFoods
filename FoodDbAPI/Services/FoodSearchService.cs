@@ -11,6 +11,7 @@ namespace FoodDbAPI.Services;
 public class FoodSearchService(
     FoodDbContext context,
     ILogger<FoodSearchService> logger,
+    IConfiguration configuration,
     IFddbScrapingService scrapingService)
     : IFoodSearchService
 {
@@ -22,20 +23,32 @@ public class FoodSearchService(
         FoodSortBy sortBy = FoodSortBy.Name,
         SortDirection sortDirection = SortDirection.Ascending)
     {
+        var forceScrape = false;
+        
+        // Get command from configuration
+        var forceScrapeCommand = configuration["ForceScrapeCommand"] ?? "+fscrape";
+        
+        // Check if the query contains "+fscrape" and remove it from the search query
+        if (query.EndsWith(forceScrapeCommand, StringComparison.OrdinalIgnoreCase))
+        {
+            query = query[..^forceScrapeCommand.Length].Trim();
+            forceScrape = true;
+            logger.LogInformation("Force scrape option detected for query '{Query}'", query);
+        }
+
         // First, search in the database
         var dbResults = await SearchFoodsInDatabaseAsync(query, userId, page, pageSize, sortBy, sortDirection);
 
-        // If we have results or we're on a page other than the first, return the database results
-        if (dbResults.Foods.Count > 0 || page > 1)
-        {
-            return dbResults;
-        }
-
-        logger.LogInformation("No database results found for '{Query}', attempting to scrape", query);
+        // If we have no database results or forceScrape is true, and we're on the first page, try to scrape
+        if ((dbResults.Foods.Count != 0 && !forceScrape) || page != 1) return dbResults;
+        
+        logger.LogInformation("{Reason} for '{Query}', attempting to scrape", 
+            dbResults.Foods.Count == 0 ? "No database results found" : "Force scrape requested",
+            query);
 
         try
         {
-            // Fallback to scraping if no database results on first page
+            // Scrape foods from external source
             var scrapedFoods = await scrapingService.FindFoodItemByNameAsync(query);
 
             if (scrapedFoods.Count > 0)
@@ -43,20 +56,57 @@ public class FoodSearchService(
                 // Save scraped foods to database for future searches and get the saved entities with IDs
                 var savedFoods = await SaveScrapedFoodsToDatabaseAsync(scrapedFoods);
 
-                // Convert saved foods (with proper IDs) to DTOs and return
-                var foodDtos = savedFoods.Select(FoodSearchDto.MapSavedFoodToDto).ToList();
-
-                return new FoodSearchResponse
+                // Convert saved foods (with proper IDs) to DTOs
+                var scrapedFoodDtos = savedFoods.Select(FoodSearchDto.MapSavedFoodToDto).ToList();
+                    
+                // If forceScrape and we have database results, merge the results
+                if (forceScrape && dbResults.Foods.Count > 0)
                 {
-                    Foods = FoodSearchDto.ApplySortingToScrapedFoods(foodDtos, sortBy, sortDirection)
+                    // Create a HashSet of IDs from the database results to avoid duplicates
+                    var dbFoodIds = dbResults.Foods.Select(f => f.Id).ToHashSet();
+                        
+                    // Add only new foods from scraped results
+                    var uniqueScrapedFoods = scrapedFoodDtos
+                        .Where(f => !dbFoodIds.Contains(f.Id))
+                        .ToList();
+                        
+                    // Merge the two sets of results
+                    var mergedFoods = dbResults.Foods.Concat(uniqueScrapedFoods).ToList();
+                        
+                    // Apply the user's sorting preference to the merged results
+                    var sortedMergedFoods = FoodSearchDto.ApplySortingToScrapedFoods(
+                        mergedFoods, sortBy, sortDirection);
+                        
+                    // Apply pagination to the merged results
+                    var paginatedFoods = sortedMergedFoods
                         .Skip((page - 1) * pageSize)
                         .Take(pageSize)
-                        .ToList(),
-                    TotalCount = foodDtos.Count,
-                    Page = page,
-                    PageSize = pageSize,
-                    TotalPages = (int)Math.Ceiling((double)foodDtos.Count / pageSize)
-                };
+                        .ToList();
+                        
+                    return new FoodSearchResponse
+                    {
+                        Foods = paginatedFoods,
+                        TotalCount = sortedMergedFoods.Count,
+                        Page = page,
+                        PageSize = pageSize,
+                        TotalPages = (int)Math.Ceiling((double)sortedMergedFoods.Count / pageSize)
+                    };
+                }
+                // If we didn't have database results or didn't merge, return just the scraped results
+                else if (dbResults.Foods.Count == 0)
+                {
+                    return new FoodSearchResponse
+                    {
+                        Foods = FoodSearchDto.ApplySortingToScrapedFoods(scrapedFoodDtos, sortBy, sortDirection)
+                            .Skip((page - 1) * pageSize)
+                            .Take(pageSize)
+                            .ToList(),
+                        TotalCount = scrapedFoodDtos.Count,
+                        Page = page,
+                        PageSize = pageSize,
+                        TotalPages = (int)Math.Ceiling((double)scrapedFoodDtos.Count / pageSize)
+                    };
+                }
             }
         }
         catch (Exception ex)
@@ -64,15 +114,7 @@ public class FoodSearchService(
             logger.LogError(ex, "Error occurred while scraping foods for query '{Query}'", query);
         }
 
-        // Return empty results if both database and scraping failed
-        return new FoodSearchResponse
-        {
-            Foods = [],
-            TotalCount = 0,
-            Page = page,
-            PageSize = pageSize,
-            TotalPages = 0
-        };
+        return dbResults;
     }
 
     private async Task<FoodSearchResponse> SearchFoodsInDatabaseAsync(

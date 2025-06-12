@@ -6,18 +6,22 @@ using HtmlAgilityPack;
 
 namespace FoodDbAPI.Services;
 
-public class FddbScrapingService(HttpClient httpClient, ILogger<FddbScrapingService> logger) : IFddbScrapingService
+public class FddbScrapingService(
+    HttpClient httpClient,
+    IConfiguration configuration,
+    ILogger<FddbScrapingService> logger) : IFddbScrapingService
 {
-    public async Task<List<FddbFoodImportDto>> FindFoodItemByNameAsync(string foodName, CancellationToken cancellationToken = default)
+    public async Task<List<FddbFoodImportDto>> FindFoodItemByNameAsync(string foodName,
+        CancellationToken cancellationToken = default)
     {
         logger.LogInformation("Searching for food item: {FoodName}", foodName);
 
         var searchUrl = $"https://fddb.info/db/de/suche/?search={Uri.EscapeDataString(foodName)}";
-        
+
         try
         {
             var response = await httpClient.GetAsync(searchUrl, cancellationToken);
-            
+
             if (!response.IsSuccessStatusCode)
             {
                 logger.LogWarning("Failed to fetch search results: {StatusCode}", response.StatusCode);
@@ -51,18 +55,21 @@ public class FddbScrapingService(HttpClient httpClient, ILogger<FddbScrapingServ
             var foodDetails = new List<FddbFoodImportDto>();
             var urlRegex = new Regex(@"window\.location\.href='(/db/de/lebensmittel/[^']+)'");
             
-            foreach (var item in foodItems.Take(25))
+            // Try to get amount to scrape from configuration, default to 100 if not set
+            var maxItemsToScrape = configuration.GetValue("Fddb:MaxItemsToScrape", 100);
+
+            foreach (var item in foodItems.Take(maxItemsToScrape))
             {
                 var onclick = item.GetAttributeValue("onclick", string.Empty);
                 var urlMatch = urlRegex.Match(onclick);
-                
+
                 if (!urlMatch.Success) continue;
-                
+
                 var foodUrl = urlMatch.Groups[1].Value;
                 var foodItem = await ProcessUrlWithRetryAsync(foodUrl, maxRetries: 3, cancellationToken);
-                
+
                 if (foodItem == null) continue;
-                
+
                 foodDetails.Add(foodItem);
                 logger.LogDebug("Found food item: {FoodName} ({Url})", foodItem.Name, foodItem.Url);
             }
@@ -111,7 +118,8 @@ public class FddbScrapingService(HttpClient httpClient, ILogger<FddbScrapingServ
             {
                 attempts++;
                 var delay = TimeSpan.FromSeconds(Math.Pow(2, attempts));
-                logger.LogWarning(ex, "Transient error processing {Url}, retrying in {Delay}s (attempt {Attempt}/{MaxRetries})", 
+                logger.LogWarning(ex,
+                    "Transient error processing {Url}, retrying in {Delay}s (attempt {Attempt}/{MaxRetries})",
                     uri, delay.TotalSeconds, attempts, maxRetries);
                 await Task.Delay(delay, cancellationToken);
             }
@@ -195,7 +203,9 @@ public class FddbScrapingService(HttpClient httpClient, ILogger<FddbScrapingServ
         var unit = parts.Length > 1 ? parts[1].Trim() : string.Empty;
 
         var value = double.TryParse(valueStr, System.Globalization.NumberStyles.Any,
-            System.Globalization.CultureInfo.InvariantCulture, out var result) ? result : 0;
+            System.Globalization.CultureInfo.InvariantCulture, out var result)
+            ? result
+            : 0;
 
         return new Models.Fddb.NutritionalValue
         {

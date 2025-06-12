@@ -62,7 +62,7 @@ public class FddbEditorService(FoodDbContext context, ILogger<FddbEditorService>
         if (nutrition == null)
             return false;
 
-        bool nutritionValuesChanged = false;
+        var nutritionValuesChanged = false;
 
         // Update only non-null properties
         if (updateDto.KilojoulesValue.HasValue)
@@ -223,8 +223,8 @@ public class FddbEditorService(FoodDbContext context, ILogger<FddbEditorService>
         if (food == null)
             return false;
 
-        bool foodInfoChanged = false;
-        bool nutritionValuesChanged = false;
+        var foodInfoChanged = false;
+        var nutritionValuesChanged = false;
 
         if (updateDto.FoodInfo != null)
         {
@@ -282,12 +282,12 @@ public class FddbEditorService(FoodDbContext context, ILogger<FddbEditorService>
             return 0;
         }
 
-        int updatedCount = 0;
+        var updatedCount = 0;
 
         foreach (var entry in entries)
         {
             // Update the calculated nutrition values based on grams consumed
-            double ratio = entry.GramsConsumed / 100.0; 
+            var ratio = entry.GramsConsumed / 100.0; 
             
             entry.Calories = food.Nutrition.CaloriesValue * ratio;
             entry.Protein = food.Nutrition.ProteinValue * ratio;
@@ -324,7 +324,7 @@ public class FddbEditorService(FoodDbContext context, ILogger<FddbEditorService>
             return 0;
         }
 
-        int updatedCount = 0;
+        var updatedCount = 0;
 
         foreach (var entry in entries)
         {
