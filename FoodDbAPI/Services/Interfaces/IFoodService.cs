@@ -5,7 +5,11 @@ namespace FoodDbAPI.Services.Interfaces;
 
 public interface IFoodService
 {
-    Task<FoodSearchResponse> SearchFoodsAsync(string query, int page = 1, int pageSize = 20,
+    Task<FoodSearchResponse> SearchFoodsAsync(
+        string query, 
+        int? userId = null,
+        int page = 1, 
+        int pageSize = 20,
         FoodSortBy sortBy = FoodSortBy.Name,
         SortDirection sortDirection = SortDirection.Ascending);
 

@@ -12,11 +12,14 @@ public class FoodService(
 {
     // Delegating to FoodSearchService
     public Task<FoodSearchResponse> SearchFoodsAsync(
-        string query, int page = 1, int pageSize = 20,
+        string query, 
+        int? userId = null,
+        int page = 1, 
+        int pageSize = 20,
         FoodSortBy sortBy = FoodSortBy.Name,
         SortDirection sortDirection = SortDirection.Ascending)
     {
-        return foodSearchService.SearchFoodsAsync(query, page, pageSize, sortBy, sortDirection);
+        return foodSearchService.SearchFoodsAsync(query, userId, page, pageSize, sortBy, sortDirection);
     }
 
     public Task<List<string>> GetFoodCategoriesAsync()

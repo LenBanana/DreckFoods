@@ -30,7 +30,10 @@ public class FoodController(IFoodService foodService, ILogger<FoodController> lo
             if (pageSize > 100)
                 pageSize = 100;
 
-            var result = await foodService.SearchFoodsAsync(query, page, pageSize, sortBy, sortDirection);
+            // Get the current user's ID to prioritize their previously eaten foods
+            int? userId = User.GetUserId();
+            
+            var result = await foodService.SearchFoodsAsync(query, userId, page, pageSize, sortBy, sortDirection);
             return Ok(result);
         }
         catch (Exception ex)

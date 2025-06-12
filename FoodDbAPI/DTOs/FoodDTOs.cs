@@ -75,6 +75,7 @@ public class FoodSearchDto
     public string? Ean { get; set; }
     public List<string> Tags { get; set; } = new();
     public NutritionInfo Nutrition { get; set; } = new();
+    public bool PreviouslyEaten { get; set; } = false;
 
     public static FoodSearchDto? MapSavedFoodToDto(FddbFood? food)
     {
@@ -147,4 +148,3 @@ public class FoodSearchResponse : PaginatedResponse
     public List<FoodSearchDto> Foods { get; set; } = new();
     public int TotalCount { get; set; }
 }
-

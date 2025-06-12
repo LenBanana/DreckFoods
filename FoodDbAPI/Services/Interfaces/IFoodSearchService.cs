@@ -7,6 +7,7 @@ public interface IFoodSearchService
 {
     Task<FoodSearchResponse> SearchFoodsAsync(
         string query, 
+        int? userId = null,
         int page = 1, 
         int pageSize = 20,
         FoodSortBy sortBy = FoodSortBy.Name,

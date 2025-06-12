@@ -16,13 +16,14 @@ public class FoodSearchService(
 {
     public async Task<FoodSearchResponse> SearchFoodsAsync(
         string query,
+        int? userId = null,
         int page = 1,
         int pageSize = 20,
         FoodSortBy sortBy = FoodSortBy.Name,
         SortDirection sortDirection = SortDirection.Ascending)
     {
         // First, search in the database
-        var dbResults = await SearchFoodsInDatabaseAsync(query, page, pageSize, sortBy, sortDirection);
+        var dbResults = await SearchFoodsInDatabaseAsync(query, userId, page, pageSize, sortBy, sortDirection);
 
         // If we have results or we're on a page other than the first, return the database results
         if (dbResults.Foods.Count > 0 || page > 1)
@@ -76,6 +77,7 @@ public class FoodSearchService(
 
     private async Task<FoodSearchResponse> SearchFoodsInDatabaseAsync(
         string query,
+        int? userId,
         int page,
         int pageSize,
         FoodSortBy sortBy,
@@ -88,26 +90,112 @@ public class FoodSearchService(
         // Apply search filters
         searchQuery = ApplySearchFilters(searchQuery, query);
 
+        // Get total count for pagination
         var totalCount = await searchQuery.CountAsync();
         var totalPages = (int)Math.Ceiling((double)totalCount / pageSize);
 
+        // Get the basic ordered query based on user's sort preference
         var orderedQuery = ApplySorting(searchQuery, sortBy, sortDirection);
 
-        var foods = await orderedQuery
+        // If userId is provided, we'll get the user's previously eaten foods
+        HashSet<int> previouslyEatenFoodIds = new();
+        
+        if (userId.HasValue)
+        {
+            previouslyEatenFoodIds = await context.FoodEntries
+                .Where(fe => fe.UserId == userId.Value)
+                .Select(fe => fe.FddbFoodId)
+                .Distinct()
+                .ToHashSetAsync();
+            
+            logger.LogInformation("Found {Count} previously eaten foods for user {UserId}", 
+                previouslyEatenFoodIds.Count, userId.Value);
+            
+            if (previouslyEatenFoodIds.Count > 0)
+            {
+                // Execute the full query (without pagination) to get all matching foods
+                var allFoodEntities = await orderedQuery.ToListAsync();
+                
+                // Separate into two groups
+                var previouslyEatenFoods = allFoodEntities
+                    .Where(f => previouslyEatenFoodIds.Contains(f.Id))
+                    .ToList();
+                
+                var newFoods = allFoodEntities
+                    .Where(f => !previouslyEatenFoodIds.Contains(f.Id))
+                    .ToList();
+                
+                // Map both groups to DTOs
+                var previouslyEatenDtos = previouslyEatenFoods.Select(f => new FoodSearchDto
+                {
+                    Id = f.Id,
+                    Name = WebUtility.HtmlDecode(f.Name),
+                    Url = f.Url,
+                    Description = WebUtility.HtmlDecode(f.Description),
+                    ImageUrl = f.ImageUrl,
+                    Brand = f.Brand,
+                    Tags = f.Tags,
+                    Nutrition = f.Nutrition.ToNutritionInfo(),
+                    PreviouslyEaten = true
+                }).ToList();
+                
+                var newFoodDtos = newFoods.Select(f => new FoodSearchDto
+                {
+                    Id = f.Id,
+                    Name = WebUtility.HtmlDecode(f.Name),
+                    Url = f.Url,
+                    Description = WebUtility.HtmlDecode(f.Description),
+                    ImageUrl = f.ImageUrl,
+                    Brand = f.Brand,
+                    Tags = f.Tags,
+                    Nutrition = f.Nutrition.ToNutritionInfo(),
+                    PreviouslyEaten = false
+                }).ToList();
+                
+                // Apply the user's sorting preference to each group separately
+                var sortedPreviouslyEaten = FoodSearchDto.ApplySortingToScrapedFoods(
+                    previouslyEatenDtos, sortBy, sortDirection);
+                
+                var sortedNewFoods = FoodSearchDto.ApplySortingToScrapedFoods(
+                    newFoodDtos, sortBy, sortDirection);
+                
+                // Combine the two groups with previously eaten foods first
+                var combinedFoods = sortedPreviouslyEaten.Concat(sortedNewFoods).ToList();
+                
+                // Apply pagination to the combined results
+                var paginatedFoods = combinedFoods
+                    .Skip((page - 1) * pageSize)
+                    .Take(pageSize)
+                    .ToList();
+                
+                return new FoodSearchResponse
+                {
+                    Foods = paginatedFoods,
+                    TotalCount = combinedFoods.Count,
+                    Page = page,
+                    PageSize = pageSize,
+                    TotalPages = (int)Math.Ceiling((double)combinedFoods.Count / pageSize)
+                };
+            }
+        }
+
+        var foodEntities = await orderedQuery
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(f => new FoodSearchDto
-            {
-                Id = f.Id,
-                Name = WebUtility.HtmlDecode(f.Name),
-                Url = f.Url,
-                Description = WebUtility.HtmlDecode(f.Description),
-                ImageUrl = f.ImageUrl,
-                Brand = f.Brand,
-                Tags = f.Tags,
-                Nutrition = f.Nutrition.ToNutritionInfo()
-            })
             .ToListAsync();
+
+        var foods = foodEntities.Select(f => new FoodSearchDto
+        {
+            Id = f.Id,
+            Name = WebUtility.HtmlDecode(f.Name),
+            Url = f.Url,
+            Description = WebUtility.HtmlDecode(f.Description),
+            ImageUrl = f.ImageUrl,
+            Brand = f.Brand,
+            Tags = f.Tags,
+            Nutrition = f.Nutrition.ToNutritionInfo(),
+            PreviouslyEaten = previouslyEatenFoodIds.Contains(f.Id)
+        }).ToList();
 
         return new FoodSearchResponse
         {
@@ -179,11 +267,12 @@ public class FoodSearchService(
                 Id = fe.FddbFood.Id,
                 Name = WebUtility.HtmlDecode(fe.FddbFood.Name),
                 Url = fe.FddbFood.Url,
-                Description = fe.FddbFood.Description,
+                Description = WebUtility.HtmlDecode(fe.FddbFood.Description),
                 ImageUrl = fe.FddbFood.ImageUrl,
                 Brand = fe.FddbFood.Brand,
                 Tags = fe.FddbFood.Tags,
-                Nutrition = fe.FddbFood.Nutrition.ToNutritionInfo()
+                Nutrition = fe.FddbFood.Nutrition.ToNutritionInfo(),
+                PreviouslyEaten = true // Set this flag to true since these are all previously eaten foods
             })
             .ToList();
 
