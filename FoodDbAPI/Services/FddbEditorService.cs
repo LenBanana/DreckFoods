@@ -286,16 +286,19 @@ public class FddbEditorService(FoodDbContext context, ILogger<FddbEditorService>
 
         foreach (var entry in entries)
         {
-            // Update the calculated nutrition values based on grams consumed
-            var ratio = entry.GramsConsumed / 100.0; 
+            // Set the base nutritional values from the food
+            entry.Calories = food.Nutrition.CaloriesValue;
+            entry.Protein = food.Nutrition.ProteinValue;
+            entry.Fat = food.Nutrition.FatValue;
+            entry.Carbohydrates = food.Nutrition.CarbohydratesTotalValue;
+            entry.Sugar = food.Nutrition.CarbohydratesSugarValue;
+            entry.Fiber = food.Nutrition.FiberValue;
+            entry.Caffeine = food.Nutrition.CaffeineValue;
+            entry.Salt = food.Nutrition.SaltValue;
             
-            entry.Calories = food.Nutrition.CaloriesValue * ratio;
-            entry.Protein = food.Nutrition.ProteinValue * ratio;
-            entry.Fat = food.Nutrition.FatValue * ratio;
-            entry.Carbohydrates = food.Nutrition.CarbohydratesTotalValue * ratio;
-            entry.Sugar = food.Nutrition.CarbohydratesSugarValue * ratio;
-            entry.Fiber = food.Nutrition.FiberValue * ratio;
-            entry.Caffeine = food.Nutrition.CaffeineValue * ratio;
+            // Apply the multiplier for the portion size
+            var ratio = entry.GramsConsumed / 100.0;
+            entry.ApplyMultiplier(ratio);
             
             // Also update metadata fields
             entry.FoodName = food.Name;
@@ -313,15 +316,15 @@ public class FddbEditorService(FoodDbContext context, ILogger<FddbEditorService>
     }
     
     // Helper method to update only metadata in user entries
-    private async Task<int> UpdateUserEntriesMetadataAsync(int foodId, FddbFood food)
+    private async Task UpdateUserEntriesMetadataAsync(int foodId, FddbFood food)
     {
         var entries = await context.FoodEntries
             .Where(e => e.FddbFoodId == foodId)
             .ToListAsync();
 
-        if (!entries.Any())
+        if (entries.Count == 0)
         {
-            return 0;
+            return;
         }
 
         var updatedCount = 0;
@@ -339,7 +342,40 @@ public class FddbEditorService(FoodDbContext context, ILogger<FddbEditorService>
 
         await context.SaveChangesAsync();
         logger.LogInformation("Updated metadata for {Count} user entries for food ID {FoodId}", updatedCount, foodId);
-
-        return updatedCount;
+    }
+    
+    /// <summary>
+    /// Updates all user entries with the current nutritional data for all foods in the database
+    /// </summary>
+    /// <returns>The number of updated user entries</returns>
+    public async Task<int> UpdateAllUserEntriesWithCurrentNutritionDataAsync()
+    {
+        logger.LogInformation("Starting update of all user entries with current nutritional data");
+        
+        // Get all FddbFood IDs that are referenced in food entries
+        var foodIds = await context.FoodEntries
+            .Select(e => e.FddbFoodId)
+            .Distinct()
+            .ToListAsync();
+            
+        if (foodIds.Count == 0)
+        {
+            logger.LogInformation("No food entries found to update");
+            return 0;
+        }
+        
+        var totalUpdatedEntries = 0;
+        
+        foreach (var foodId in foodIds)
+        {
+            // For each food ID, update all associated entries
+            var updatedForThisFood = await UpdateUserEntriesForFoodAsync(foodId);
+            totalUpdatedEntries += updatedForThisFood;
+            
+            logger.LogDebug("Updated {Count} entries for food ID {FoodId}", updatedForThisFood, foodId);
+        }
+        
+        logger.LogInformation("Completed update of all user entries. Total updated: {Count}", totalUpdatedEntries);
+        return totalUpdatedEntries;
     }
 }

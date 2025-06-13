@@ -1,6 +1,7 @@
 using System.Net;
 using FoodDbAPI.Data;
 using FoodDbAPI.DTOs;
+using FoodDbAPI.DTOs.Base;
 using FoodDbAPI.Models;
 using FoodDbAPI.Models.Fddb;
 using FoodDbAPI.Services.Interfaces;
@@ -111,19 +112,25 @@ public class FoodEntryService(
     private void UpdateFoodEntryFromFood(FoodEntry entry, FddbFood food, double gramsConsumed)
     {
         var multiplier = gramsConsumed / 100.0;
-        var nutrition = food.Nutrition.ToNutritionInfo();
 
+        // Set basic metadata
         entry.FoodName = WebUtility.HtmlDecode(food.Name);
         entry.FoodUrl = food.Url;
         entry.Brand = food.Brand;
         entry.ImageUrl = food.ImageUrl;
         entry.GramsConsumed = gramsConsumed;
-        entry.Calories = nutrition.Calories.Value * multiplier;
-        entry.Protein = nutrition.Protein.Value * multiplier;
-        entry.Fat = nutrition.Fat.Value * multiplier;
-        entry.Carbohydrates = nutrition.Carbohydrates.Total.Value * multiplier;
-        entry.Fiber = nutrition.Fiber.Value * multiplier;
-        entry.Sugar = nutrition.Carbohydrates.Sugar.Value * multiplier;
-        entry.Caffeine = nutrition.Caffeine?.Value * multiplier ?? 0.0;
+        
+        // Set base nutrition values
+        entry.Calories = food.Nutrition.CaloriesValue;
+        entry.Protein = food.Nutrition.ProteinValue;
+        entry.Fat = food.Nutrition.FatValue;
+        entry.Carbohydrates = food.Nutrition.CarbohydratesTotalValue;
+        entry.Sugar = food.Nutrition.CarbohydratesSugarValue;
+        entry.Fiber = food.Nutrition.FiberValue;
+        entry.Caffeine = food.Nutrition.CaffeineValue;
+        entry.Salt = food.Nutrition.SaltValue;
+        
+        // Apply the multiplier to all nutritional values at once
+        entry.ApplyMultiplier(multiplier);
     }
 }

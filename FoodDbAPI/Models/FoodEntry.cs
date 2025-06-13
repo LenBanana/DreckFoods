@@ -1,9 +1,11 @@
+using System;
 using System.ComponentModel.DataAnnotations;
+using FoodDbAPI.DTOs.Base;
 using FoodDbAPI.Models.Fddb;
 
 namespace FoodDbAPI.Models;
 
-public class FoodEntry
+public class FoodEntry : NutritionBase
 {
     public int Id { get; set; }
 
@@ -24,14 +26,7 @@ public class FoodEntry
     [Range(0.1, 10000)]
     public double GramsConsumed { get; set; }
 
-    // Calculated nutrition values based on grams consumed
-    public double Calories { get; set; }
-    public double Protein { get; set; }
-    public double Fat { get; set; }
-    public double Carbohydrates { get; set; }
-    public double Fiber { get; set; }
-    public double Sugar { get; set; }
-    public double Caffeine { get; set; }
+    // Calculated nutrition values are now inherited from NutritionBase
 
     [Required]
     public DateTime ConsumedAt { get; set; }

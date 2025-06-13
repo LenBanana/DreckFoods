@@ -42,13 +42,14 @@ public class TimelineService(
             var dailyData = new DailyTimelineDto
             {
                 Date = currentDate,
-                TotalCalories = dayFoodEntries.Sum(f => f.Calories),
-                TotalProtein = dayFoodEntries.Sum(f => f.Protein),
-                TotalFat = dayFoodEntries.Sum(f => f.Fat),
-                TotalCarbohydrates = dayFoodEntries.Sum(f => f.Carbohydrates),
-                TotalSugar = dayFoodEntries.Sum(f => f.Sugar),
-                TotalFiber = dayFoodEntries.Sum(f => f.Fiber),
-                TotalCaffeine = dayFoodEntries.Sum(f => f.Caffeine),
+                Calories = dayFoodEntries.Sum(f => f.Calories),
+                Protein = dayFoodEntries.Sum(f => f.Protein),
+                Fat = dayFoodEntries.Sum(f => f.Fat),
+                Carbohydrates = dayFoodEntries.Sum(f => f.Carbohydrates),
+                Sugar = dayFoodEntries.Sum(f => f.Sugar),
+                Fiber = dayFoodEntries.Sum(f => f.Fiber),
+                Caffeine = dayFoodEntries.Sum(f => f.Caffeine),
+                Salt = dayFoodEntries.Sum(f => f.Salt),
                 FoodEntries = dayFoodEntries.Select(FoodEntryDto.MapToFoodEntryDto).ToList(),
                 WeightEntry = dayWeightEntry != null
                     ? new WeightEntryDto

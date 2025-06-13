@@ -10,4 +10,5 @@ public interface IFddbEditorService
     Task<bool> UpdateFoodNutritionAsync(int id, FddbFoodNutritionUpdateDTO updateDto);
     Task<bool> UpdateFoodCompleteAsync(int id, FddbFoodCompleteUpdateDTO updateDto);
     Task<int> UpdateUserEntriesForFoodAsync(int foodId);
+    Task<int> UpdateAllUserEntriesWithCurrentNutritionDataAsync();
 }

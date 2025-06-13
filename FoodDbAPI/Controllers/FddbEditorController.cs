@@ -70,4 +70,12 @@ public class FddbEditorController(IFddbEditorService editorService) : Controller
             
         return Ok(new { Success = true, Message = $"Updated {count} user entries for this food item" });
     }
+    
+    [HttpPost("update-all-user-entries")]
+    public async Task<IActionResult> UpdateAllUserEntries()
+    {
+        var count = await editorService.UpdateAllUserEntriesWithCurrentNutritionDataAsync();
+        
+        return Ok(new { Success = true, Message = $"Updated {count} user entries with current nutrition data" });
+    }
 }

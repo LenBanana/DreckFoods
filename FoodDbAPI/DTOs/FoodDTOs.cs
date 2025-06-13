@@ -7,7 +7,7 @@ using FoodDbAPI.Models.Fddb;
 
 namespace FoodDbAPI.DTOs;
 
-public class FoodEntryDto
+public class FoodEntryDto : NutritionBase
 {
     public int Id { get; set; }
     public string FoodName { get; set; } = string.Empty;
@@ -15,13 +15,6 @@ public class FoodEntryDto
     public string? Brand { get; set; }
     public string? ImageUrl { get; set; }
     public double GramsConsumed { get; set; }
-    public double Calories { get; set; }
-    public double Protein { get; set; }
-    public double Fat { get; set; }
-    public double Carbohydrates { get; set; }
-    public double Fiber { get; set; }
-    public double Sugar { get; set; }
-    public double Caffeine { get; set; }
     public DateTime ConsumedAt { get; set; }
     public DateTime CreatedAt { get; set; }
     
@@ -42,6 +35,7 @@ public class FoodEntryDto
             Fiber = entry.Fiber,
             Sugar = entry.Sugar,
             Caffeine = entry.Caffeine,
+            Salt = entry.Salt,
             ConsumedAt = entry.ConsumedAt,
             CreatedAt = entry.CreatedAt
         };
@@ -125,7 +119,7 @@ public class FoodSearchDto
     }
 }
 
-public class FoodEntryResponseDto
+public class FoodEntryResponseDto : NutritionBase
 {
     public int Id { get; set; }
     public string FoodName { get; set; } = string.Empty;
@@ -133,12 +127,6 @@ public class FoodEntryResponseDto
     public string? Brand { get; set; }
     public string? ImageUrl { get; set; }
     public double GramsConsumed { get; set; }
-    public double Calories { get; set; }
-    public double Protein { get; set; }
-    public double Fat { get; set; }
-    public double Carbohydrates { get; set; }
-    public double Fiber { get; set; }
-    public double Sugar { get; set; }
     public DateTime ConsumedAt { get; set; }
     public DateTime CreatedAt { get; set; }
 }

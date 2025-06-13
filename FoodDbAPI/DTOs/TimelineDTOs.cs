@@ -1,15 +1,18 @@
+using FoodDbAPI.DTOs.Base;
+
 namespace FoodDbAPI.DTOs;
 
-public class DailyTimelineDto
+public class DailyTimelineDto : NutritionBase
 {
     public DateTime Date { get; set; }
-    public double TotalCalories { get; set; }
-    public double TotalProtein { get; set; }
-    public double TotalFat { get; set; }
-    public double TotalCarbohydrates { get; set; }
-    public double TotalSugar { get; set; }
-    public double TotalFiber { get; set; }
-    public double TotalCaffeine { get; set; }
+    // Nutritional properties are inherited from NutritionBase
+    // TotalCalories -> Calories
+    // TotalProtein -> Protein
+    // TotalFat -> Fat
+    // TotalCarbohydrates -> Carbohydrates
+    // TotalSugar -> Sugar
+    // TotalFiber -> Fiber
+    // TotalCaffeine -> Caffeine
     public List<FoodEntryDto> FoodEntries { get; set; } = new();
     public WeightEntryDto? WeightEntry { get; set; }
 }
