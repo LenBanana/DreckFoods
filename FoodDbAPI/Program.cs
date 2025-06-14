@@ -43,8 +43,10 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 // Add Entity Framework
-builder.Services.AddDbContext<FoodDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+builder.Services.AddDbContext<FoodDbContext>((_, options) =>
+{
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"));
+});
 
 // Add JWT Authentication
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");

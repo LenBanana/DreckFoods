@@ -135,4 +135,5 @@ public class FoodSearchResponse : PaginatedResponse
 {
     public List<FoodSearchDto> Foods { get; set; } = new();
     public int TotalCount { get; set; }
+    public bool ResultsLimited { get; set; }
 }

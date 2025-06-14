@@ -5,6 +5,7 @@ using FoodDbAPI.DTOs.Enums;
 using FoodDbAPI.Models.Fddb;
 using FoodDbAPI.Services.Interfaces;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace FoodDbAPI.Services;
 
@@ -15,6 +16,8 @@ public class FoodSearchService(
     IFddbScrapingService scrapingService)
     : IFoodSearchService
 {
+    private readonly int _maxSearchResults = configuration.GetValue("MaxSearchResults", 10000);
+
     public async Task<FoodSearchResponse> SearchFoodsAsync(
         string query,
         int? userId = null,
@@ -132,12 +135,28 @@ public class FoodSearchService(
         // Apply search filters
         searchQuery = ApplySearchFilters(searchQuery, query);
 
-        // Get total count for pagination
+        // Get an estimate of the total count, but limit it to our max value for performance
         var totalCount = await searchQuery.CountAsync();
+        var isLimitReached = totalCount > _maxSearchResults;
+        
+        // If we're over the limit, log it
+        if (isLimitReached)
+        {
+            logger.LogWarning("Search for '{Query}' returned over {MaxResults} results, limiting to prevent performance issues", 
+                query, _maxSearchResults);
+            totalCount = _maxSearchResults;
+        }
+
         var totalPages = (int)Math.Ceiling((double)totalCount / pageSize);
 
         // Get the basic ordered query based on user's sort preference
         var orderedQuery = ApplySorting(searchQuery, sortBy, sortDirection);
+        
+        // Apply the maximum result limit if needed
+        if (isLimitReached)
+        {
+            orderedQuery = orderedQuery.Take(_maxSearchResults);
+        }
 
         // If userId is provided, we'll get the user's previously eaten foods
         HashSet<int> previouslyEatenFoodIds = new();
@@ -155,7 +174,7 @@ public class FoodSearchService(
             
             if (previouslyEatenFoodIds.Count > 0)
             {
-                // Execute the full query (without pagination) to get all matching foods
+                // Execute the query with the limit in place
                 var allFoodEntities = await orderedQuery.ToListAsync();
                 
                 // Separate into two groups
@@ -216,7 +235,8 @@ public class FoodSearchService(
                     TotalCount = combinedFoods.Count,
                     Page = page,
                     PageSize = pageSize,
-                    TotalPages = (int)Math.Ceiling((double)combinedFoods.Count / pageSize)
+                    TotalPages = (int)Math.Ceiling((double)combinedFoods.Count / pageSize),
+                    ResultsLimited = isLimitReached
                 };
             }
         }
@@ -245,7 +265,8 @@ public class FoodSearchService(
             TotalCount = totalCount,
             Page = page,
             PageSize = pageSize,
-            TotalPages = totalPages
+            TotalPages = totalPages,
+            ResultsLimited = isLimitReached
         };
     }
 
