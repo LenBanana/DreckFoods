@@ -14,7 +14,7 @@ public class WeightService(FoodDbContext context, ILogger<WeightService> logger)
         {
             UserId = userId,
             Weight = request.Weight,
-            RecordedAt = request.RecordedAt.ToUniversalTime(),
+            RecordedAt = request.RecordedAt,
             CreatedAt = DateTime.UtcNow
         };
 
@@ -46,10 +46,10 @@ public class WeightService(FoodDbContext context, ILogger<WeightService> logger)
         var query = context.WeightEntries.Where(w => w.UserId == userId);
 
         if (startDate.HasValue)
-            query = query.Where(w => w.RecordedAt >= startDate.Value.ToUniversalTime());
+            query = query.Where(w => w.RecordedAt >= startDate.Value);
 
         if (endDate.HasValue)
-            query = query.Where(w => w.RecordedAt <= endDate.Value.ToUniversalTime());
+            query = query.Where(w => w.RecordedAt <= endDate.Value);
 
         var entries = await query
             .OrderByDescending(w => w.RecordedAt)

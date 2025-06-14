@@ -13,7 +13,6 @@ public class TimelineService(
 
     public async Task<List<DailyTimelineDto>> GetTimelineAsync(int userId, DateTime startDate, DateTime endDate)
     {
-        endDate = endDate.AddDays(1).AddTicks(-1);
         var foodEntries = await context.FoodEntries
             .Where(f => f.UserId == userId &&
                         f.ConsumedAt >= startDate &&

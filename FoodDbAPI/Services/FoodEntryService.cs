@@ -21,7 +21,7 @@ public class FoodEntryService(
         var foodEntry = CreateFoodEntryFromFood(food, request.GramsConsumed);
         foodEntry.UserId = userId;
         foodEntry.FddbFoodId = food.Id;
-        foodEntry.ConsumedAt = request.ConsumedAt.ToUniversalTime();
+        foodEntry.ConsumedAt = request.ConsumedAt;
         foodEntry.CreatedAt = DateTime.UtcNow;
 
         context.FoodEntries.Add(foodEntry);
@@ -61,7 +61,7 @@ public class FoodEntryService(
 
         if (date.HasValue)
         {
-            var startOfDay = date.Value.Date.ToUniversalTime();
+            var startOfDay = date.Value.Date;
             var endOfDay = startOfDay.AddDays(1);
             query = query.Where(f => f.ConsumedAt >= startOfDay && f.ConsumedAt < endOfDay);
         }

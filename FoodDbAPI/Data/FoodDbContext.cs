@@ -63,7 +63,7 @@ public class FoodDbContext(DbContextOptions<FoodDbContext> options) : DbContext(
             entity.Property(e => e.Brand).HasMaxLength(100);
             entity.Property(e => e.ConsumedAt)
                 .HasConversion(
-                    v => v.ToUniversalTime(),
+                    v => v,
                     v => DateTime.SpecifyKind(v, DateTimeKind.Utc));
             entity.HasIndex(e => new { e.UserId, e.ConsumedAt });
         });
@@ -114,12 +114,12 @@ public class FoodDbContext(DbContextOptions<FoodDbContext> options) : DbContext(
                 
             entity.Property(e => e.CreatedAt)
                 .HasConversion(
-                    v => v.ToUniversalTime(),
+                    v => v,
                     v => DateTime.SpecifyKind(v, DateTimeKind.Utc));
                     
             entity.Property(e => e.UpdatedAt)
                 .HasConversion(
-                    v => v.ToUniversalTime(),
+                    v => v,
                     v => DateTime.SpecifyKind(v, DateTimeKind.Utc));
                     
             entity.HasIndex(e => e.UserId);
