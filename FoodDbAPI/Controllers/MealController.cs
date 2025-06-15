@@ -70,6 +70,31 @@ public class MealController(IMealService mealService) : ControllerBase
             return StatusCode(500, $"Internal server error: {ex.Message}");
         }
     }
+    
+    // Duplicate meals 
+    [HttpPost("duplicate/{id}")]
+    [Authorize]
+    public async Task<ActionResult<MealResponseDto>> DuplicateMeal(int id)
+    {
+        try
+        {
+            var userId = User.GetUserId();
+            var meal = await mealService.DuplicateMealAsync(id, userId);
+            return CreatedAtAction(nameof(GetMealById), new { id = meal.Id }, meal);
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound("Meal not found");
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, $"Internal server error: {ex.Message}");
+        }
+    }
 
     [HttpPut("{id}")]
     [Authorize]

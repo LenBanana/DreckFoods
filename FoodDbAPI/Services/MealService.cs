@@ -172,6 +172,51 @@ public class MealService(FoodDbContext context, IFoodService foodService, IConfi
 
         return CreateMealResponseDto(meal);
     }
+    
+    public async Task<MealResponseDto> DuplicateMealAsync(int mealId, int userId)
+    {
+        var originalMeal = await context.Meals
+            .Include(m => m.MealItems)
+            .ThenInclude(mi => mi.FddbFood)
+            .ThenInclude(f => f.Nutrition)
+            .FirstOrDefaultAsync(m => m.Id == mealId && m.UserId == userId);
+
+        if (originalMeal == null)
+        {
+            throw new KeyNotFoundException("Original meal not found");
+        }
+
+        // Create a new meal with the same properties
+        var duplicatedMeal = new Meal
+        {
+            Name = originalMeal.Name + " (Copy)",
+            Description = originalMeal.Description,
+            UserId = userId,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        context.Meals.Add(duplicatedMeal);
+        await context.SaveChangesAsync();
+
+        // Copy meal items to the new meal
+        foreach (var item in originalMeal.MealItems)
+        {
+            var newMealItem = new MealItem
+            {
+                MealId = duplicatedMeal.Id,
+                FddbFoodId = item.FddbFoodId,
+                Weight = item.Weight
+            };
+
+            context.MealItems.Add(newMealItem);
+        }
+
+        await context.SaveChangesAsync();
+
+        // Return the newly created duplicated meal
+        return await GetMealByIdAsync(duplicatedMeal.Id, userId);
+    }
 
     public async Task<List<MealResponseDto>> GetUserMealsAsync(int userId)
     {
