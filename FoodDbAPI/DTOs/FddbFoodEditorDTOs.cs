@@ -11,6 +11,7 @@ public class FddbFoodUpdateDTO
     public string? Brand { get; set; }
     public string? Ean { get; set; }
     public List<string>? Tags { get; set; }
+    public List<ServingInfo>? Servings { get; set; }
 }
 
 public class FddbFoodNutritionUpdateDTO

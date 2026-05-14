@@ -86,6 +86,10 @@ public class FoodDbContext(DbContextOptions<FoodDbContext> options) : DbContext(
                 .HasConversion(stringListConverter, stringListComparer)
                 .HasMaxLength(1000);
 
+            // Servings is an in-memory-only property (no DB column exists) — must be ignored
+            // so EF does not discover ServingInfo/NutritionalValue as entity types.
+            entity.Ignore(e => e.Servings);
+
             // Configure the one-to-one relationship with nutrition
             entity.HasOne(e => e.Nutrition)
                 .WithOne(n => n.FddbFood)

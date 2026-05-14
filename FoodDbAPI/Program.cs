@@ -3,6 +3,10 @@ using System.Text;
 using FoodDbAPI.Data;
 using FoodDbAPI.Models.Settings;
 using FoodDbAPI.Services;
+using FoodDbAPI.Services.AI.Abstractions;
+using FoodDbAPI.Services.AI.Agent;
+using FoodDbAPI.Services.AI.Providers.OpenAI;
+using FoodDbAPI.Services.AI.Sessions;
 using FoodDbAPI.Services.Interfaces;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -55,6 +59,14 @@ var key = Encoding.ASCII.GetBytes(jwtSettings["Secret"]!);
 // Add Mail Settings
 builder.Services.Configure<FrontendSettings>(builder.Configuration.GetSection("FrontendSettings"));
 builder.Services.Configure<SmtpSettings>(builder.Configuration.GetSection("SmtpSettings"));
+
+// Add AI Settings
+builder.Services.Configure<AISettings>(builder.Configuration.GetSection("AISettings"));
+builder.Services.AddScoped<IAIProvider, OpenAIProvider>();
+builder.Services.AddSingleton<IMealSessionStore, InMemoryMealSessionStore>();
+builder.Services.AddHostedService(sp =>
+    (InMemoryMealSessionStore)sp.GetRequiredService<IMealSessionStore>());
+builder.Services.AddScoped<IMealAgent, MealAgent>();
 
 builder.Services.AddAuthentication(options =>
     {

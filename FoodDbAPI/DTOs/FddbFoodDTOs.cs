@@ -24,7 +24,10 @@ public class FddbFoodImportDto
             Brand = dto.Brand,
             Ean = dto.Ean,
             Tags = dto.Tags,
+            Servings = dto.Servings,
             Nutrition = FddbFoodNutrition.FromNutritionInfo(dto.Nutrition)
         };
-    }
+    }    
+    
+    public List<ServingInfo> Servings { get; set; } = new();
 }

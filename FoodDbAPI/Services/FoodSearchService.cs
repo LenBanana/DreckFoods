@@ -163,9 +163,17 @@ public class FoodSearchService(
         
         if (userId.HasValue)
         {
-            previouslyEatenFoodIds = await context.FoodEntries
+            // Union food entries (direct log) and meal items (AI / meal logger)
+            var fromEntries = context.FoodEntries
                 .Where(fe => fe.UserId == userId.Value)
-                .Select(fe => fe.FddbFoodId)
+                .Select(fe => fe.FddbFoodId);
+
+            var fromMealItems = context.MealItems
+                .Where(mi => mi.Meal != null && mi.Meal.UserId == userId.Value)
+                .Select(mi => mi.FddbFoodId);
+
+            previouslyEatenFoodIds = await fromEntries
+                .Union(fromMealItems)
                 .Distinct()
                 .ToHashSetAsync();
             
@@ -196,6 +204,7 @@ public class FoodSearchService(
                     ImageUrl = f.ImageUrl,
                     Brand = f.Brand,
                     Tags = f.Tags,
+                    Servings = f.Servings,
                     Nutrition = f.Nutrition.ToNutritionInfo(),
                     PreviouslyEaten = true
                 }).ToList();
@@ -209,6 +218,7 @@ public class FoodSearchService(
                     ImageUrl = f.ImageUrl,
                     Brand = f.Brand,
                     Tags = f.Tags,
+                    Servings = f.Servings,
                     Nutrition = f.Nutrition.ToNutritionInfo(),
                     PreviouslyEaten = false
                 }).ToList();
@@ -255,6 +265,7 @@ public class FoodSearchService(
             ImageUrl = f.ImageUrl,
             Brand = f.Brand,
             Tags = f.Tags,
+            Servings = f.Servings,
             Nutrition = f.Nutrition.ToNutritionInfo(),
             PreviouslyEaten = previouslyEatenFoodIds.Contains(f.Id)
         }).ToList();
@@ -314,33 +325,58 @@ public class FoodSearchService(
 
     public async Task<FoodSearchResponse> GetPastEatenFoodsAsync(int userId, int page = 1, int pageSize = 20)
     {
-        var allEntries = await context.FoodEntries
+        // Collect food IDs from both direct entries and AI-logged meal items, most recent first.
+        var fromEntries = context.FoodEntries
             .Where(fe => fe.UserId == userId)
-            .Include(fe => fe.FddbFood)
-            .ThenInclude(f => f.Nutrition)
-            .OrderByDescending(fe => fe.ConsumedAt)
-            .ToListAsync();
+            .Select(fe => new { fe.FddbFoodId, ConsumedAt = (DateTime?)fe.ConsumedAt });
 
-        var distinctFoods = allEntries
-            .DistinctBy(fe => fe.FddbFood.Id)
+        var fromMealItems = context.MealItems
+            .Where(mi => mi.Meal != null && mi.Meal.UserId == userId)
+            .Select(mi => new { mi.FddbFoodId, ConsumedAt = (DateTime?)mi.Meal!.CreatedAt });
+
+        // Union, keep most-recently-consumed occurrence of each food id.
+        var recentIds = await fromEntries
+            .Union(fromMealItems)
+            .GroupBy(x => x.FddbFoodId)
+            .Select(g => new { FddbFoodId = g.Key, LastEaten = g.Max(x => x.ConsumedAt) })
+            .OrderByDescending(x => x.LastEaten)
+            .Select(x => x.FddbFoodId)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(fe => new FoodSearchDto
+            .ToListAsync();
+
+        var totalDistinctCount = await fromEntries
+            .Union(fromMealItems)
+            .Select(x => x.FddbFoodId)
+            .Distinct()
+            .CountAsync();
+
+        // Load full food details for the paged ids, preserving order.
+        var foodMap = await context.FddbFoods
+            .Include(f => f.Nutrition)
+            .Where(f => recentIds.Contains(f.Id))
+            .ToDictionaryAsync(f => f.Id);
+
+        var distinctFoods = recentIds
+            .Where(id => foodMap.ContainsKey(id))
+            .Select(id =>
             {
-                Id = fe.FddbFood.Id,
-                Name = WebUtility.HtmlDecode(fe.FddbFood.Name),
-                Url = fe.FddbFood.Url,
-                Description = WebUtility.HtmlDecode(fe.FddbFood.Description),
-                ImageUrl = fe.FddbFood.ImageUrl,
-                Brand = fe.FddbFood.Brand,
-                Tags = fe.FddbFood.Tags,
-                Nutrition = fe.FddbFood.Nutrition.ToNutritionInfo(),
-                PreviouslyEaten = true // Set this flag to true since these are all previously eaten foods
+                var f = foodMap[id];
+                return new FoodSearchDto
+                {
+                    Id = f.Id,
+                    Name = System.Net.WebUtility.HtmlDecode(f.Name),
+                    Url = f.Url,
+                    Description = System.Net.WebUtility.HtmlDecode(f.Description),
+                    ImageUrl = f.ImageUrl,
+                    Brand = f.Brand,
+                    Tags = f.Tags,
+                    Servings = f.Servings,
+                    Nutrition = f.Nutrition.ToNutritionInfo(),
+                    PreviouslyEaten = true
+                };
             })
             .ToList();
-
-        var totalDistinctCount = allEntries.DistinctBy(fe => fe.FddbFood.Id).Count();
-        var totalPages = (int)Math.Ceiling((double)totalDistinctCount / pageSize);
 
         return new FoodSearchResponse
         {
@@ -348,7 +384,7 @@ public class FoodSearchService(
             TotalCount = totalDistinctCount,
             Page = page,
             PageSize = pageSize,
-            TotalPages = totalPages
+            TotalPages = (int)Math.Ceiling((double)totalDistinctCount / pageSize)
         };
     }
 
@@ -433,6 +469,7 @@ public class FoodSearchService(
             ImageUrl = food.ImageUrl,
             Brand = food.Brand,
             Tags = food.Tags,
+            Servings = food.Servings,
             Nutrition = food.Nutrition.ToNutritionInfo()
         };
     }

@@ -42,6 +42,7 @@ public class DataImportService : IDataImportService
                          Brand = food.Brand,
                          Tags = food.Tags,
                          Ean = food.Ean,
+                         Servings = food.Servings,
                          Nutrition = FddbFoodNutrition.FromNutritionInfo(food.Nutrition)
                      }))
             {
@@ -61,6 +62,7 @@ public class DataImportService : IDataImportService
                     existingFood.Brand = dbFood.Brand;
                     existingFood.Tags = dbFood.Tags;
                     existingFood.Ean = dbFood.Ean;
+                    existingFood.Servings = dbFood.Servings;
                     
                     // Update nutrition values including caffeine
                     existingFood.Nutrition.KilojoulesValue = dbFood.Nutrition.KilojoulesValue;

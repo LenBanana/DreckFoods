@@ -42,6 +42,9 @@ public class FddbEditorService(FoodDbContext context, ILogger<FddbEditorService>
         
         if (updateDto.Tags != null)
             food.Tags = updateDto.Tags;
+        
+        if (updateDto.Servings != null)
+            food.Servings = updateDto.Servings;
 
         await context.SaveChangesAsync();
         

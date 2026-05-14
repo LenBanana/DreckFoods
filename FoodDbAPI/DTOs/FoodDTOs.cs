@@ -68,6 +68,7 @@ public class FoodSearchDto
     public string Brand { get; set; } = string.Empty;
     public string? Ean { get; set; }
     public List<string> Tags { get; set; } = new();
+    public List<ServingInfo> Servings { get; set; } = new();
     public NutritionInfo Nutrition { get; set; } = new();
     public bool PreviouslyEaten { get; set; } = false;
 
@@ -85,6 +86,7 @@ public class FoodSearchDto
             Brand = food.Brand,
             Ean = food.Ean,
             Tags = food.Tags,
+            Servings = food.Servings,
             Nutrition = food.Nutrition.ToNutritionInfo()
         };
     }

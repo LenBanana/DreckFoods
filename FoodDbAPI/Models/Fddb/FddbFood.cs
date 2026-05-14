@@ -18,6 +18,7 @@ public class FddbFood
 
     [MaxLength(50)] public string? Ean { get; set; }
     public List<string> Tags { get; set; } = [];
+    public List<ServingInfo> Servings { get; set; } = [];
 
     // Navigation property for nutrition
     public virtual FddbFoodNutrition Nutrition { get; set; } = new();

@@ -1,6 +1,7 @@
 using System.Net.Sockets;
 using System.Text.RegularExpressions;
 using FoodDbAPI.DTOs;
+using FoodDbAPI.Models.Fddb;
 using FoodDbAPI.Services.Interfaces;
 using HtmlAgilityPack;
 
@@ -155,7 +156,8 @@ public class FddbScrapingService(
             Tags = doc.DocumentNode.SelectNodes("//h2[@id='fddb-headline2']//a")
                 ?.Select(tag => tag.InnerText.Trim())
                 .ToList() ?? [],
-            Nutrition = new Models.Fddb.NutritionInfo
+            Servings = ExtractServingInfo(doc),
+            Nutrition = new NutritionInfo
             {
                 Kilojoules = ExtractNutritionalValue(doc, "Brennwert"),
                 Calories = ExtractNutritionalValue(doc, "Kalorien"),
@@ -163,13 +165,13 @@ public class FddbScrapingService(
                 Fat = ExtractNutritionalValue(doc, "Fett"),
                 Fiber = ExtractNutritionalValue(doc, "Ballaststoffe"),
                 Caffeine = ExtractNutritionalValue(doc, "Koffein"),
-                Carbohydrates = new Models.Fddb.CarbohydrateInfo
+                Carbohydrates = new CarbohydrateInfo
                 {
                     Total = ExtractNutritionalValue(doc, "Kohlenhydrate"),
                     Sugar = ExtractNutritionalValue(doc, "Zucker"),
                     Polyols = ExtractNutritionalValue(doc, "Polyole")
                 },
-                Minerals = new Models.Fddb.MineralInfo
+                Minerals = new MineralInfo
                 {
                     Salt = ExtractNutritionalValue(doc, "Salz"),
                     Iron = ExtractNutritionalValue(doc, "Eisen"),
@@ -189,14 +191,118 @@ public class FddbScrapingService(
         };
     }
 
-    private static Models.Fddb.NutritionalValue ExtractNutritionalValue(HtmlDocument doc, string label)
+    private static List<ServingInfo> ExtractServingInfo(HtmlDocument doc)
+    {
+        var servings = new List<ServingInfo>();
+        var servingNodes = doc.DocumentNode.SelectNodes("//div[@class='serva']");
+
+        if (servingNodes == null) return servings;
+
+        foreach (var servingNode in servingNodes)
+        {
+            try
+            {
+                // Extract serving name and unit from the title attribute of the link
+                var titleNode = servingNode.SelectSingleNode(".//a[@class='servb']");
+                var title = titleNode?.GetAttributeValue("title", string.Empty) ?? string.Empty;
+
+                // Extract serving amount and unit from the link text (e.g., "100 g (100 ml)" or "Glas (250 ml)")
+                var linkText = titleNode?.InnerText?.Trim() ?? string.Empty;
+
+                // Find the calories and kilojoules from the "less" div (e.g., "Brennwert: 8 kJ, Kalorien: 2 kcal")
+                var nutritionText =
+                    servingNode.SelectSingleNode(".//div[starts-with(@id, 'less')]//p")?.InnerText?.Trim() ??
+                    string.Empty;
+
+                var serving = ParseServingData(title, linkText, nutritionText);
+                if (serving != null)
+                {
+                    servings.Add(serving);
+                }
+            }
+            catch
+            {
+                // Skip malformed serving entries
+                continue;
+            }
+        }
+
+        return servings;
+    }
+
+    private static ServingInfo? ParseServingData(string title, string linkText, string nutritionText)
+    {
+        if (string.IsNullOrWhiteSpace(linkText) || string.IsNullOrWhiteSpace(nutritionText))
+            return null;
+
+        // Extract serving name from title (e.g., "100 g Monster Energy Ultra..." -> "Monster Energy Ultra...")
+        var servingName = title.Split(' ').Skip(2).FirstOrDefault() ?? "Unknown";
+        if (title.Contains("Monster Energy") || title.Contains("Glas") || title.Contains("Dose"))
+        {
+            if (title.StartsWith("100 g "))
+                servingName = "100g Standard";
+            else if (title.Contains("Glas"))
+                servingName = "Glas";
+            else if (title.Contains("Dose"))
+                servingName = "Dose";
+        }
+
+        // Parse amount and unit from link text
+        var amount = 0.0;
+        var unit = "";
+
+        // Match patterns like "100 g (100 ml)", "Glas (250 ml)", "Dose (500 ml)"
+        var match = Regex.Match(linkText,
+            @"(?:(\d+(?:,\d+)?)\s*([a-zA-Z]+)|\w+)\s*\((\d+(?:,\d+)?)\s*([a-zA-Z]+)\)");
+        if (match.Success)
+        {
+            var amountStr = match.Groups[3].Value.Replace(",", ".");
+            if (double.TryParse(amountStr, System.Globalization.NumberStyles.Any,
+                    System.Globalization.CultureInfo.InvariantCulture, out amount))
+            {
+                unit = match.Groups[4].Value;
+            }
+        }
+
+        // Parse nutrition values (e.g., "Brennwert: 8 kJ, Kalorien: 2 kcal")
+        var kilojoules = new NutritionalValue { Value = 0, Unit = "kJ" };
+        var calories = new NutritionalValue { Value = 0, Unit = "kcal" };
+
+        var kjMatch = Regex.Match(nutritionText, @"Brennwert:\s*(\d+(?:,\d+)?)\s*kJ");
+        if (kjMatch.Success && double.TryParse(kjMatch.Groups[1].Value.Replace(",", "."),
+                System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture,
+                out var kjValue))
+        {
+            kilojoules.Value = kjValue;
+        }
+
+        var kcalMatch = Regex.Match(nutritionText, @"Kalorien:\s*(\d+(?:,\d+)?)\s*kcal");
+        if (kcalMatch.Success && double.TryParse(kcalMatch.Groups[1].Value.Replace(",", "."),
+                System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture,
+                out var kcalValue))
+        {
+            calories.Value = kcalValue;
+        }
+
+        return new ServingInfo
+        {
+            Name = servingName,
+            Amount = amount,
+            Unit = unit,
+            Kilojoules = kilojoules,
+            Calories = calories
+        };
+    }
+
+
+    private static NutritionalValue ExtractNutritionalValue(HtmlDocument doc, string label)
     {
         var raw = doc.DocumentNode.SelectSingleNode(
             $"//*[self::a or self::span][contains(text(), '{label}')]/parent::div/following-sibling::div[1]"
         )?.InnerText?.Trim().ToLower();
 
         if (string.IsNullOrWhiteSpace(raw) || raw.StartsWith("k.a") || raw.StartsWith("k. a"))
-            return new Models.Fddb.NutritionalValue { Value = 0, Unit = string.Empty };
+            return new NutritionalValue { Value = 0, Unit = string.Empty };
 
         var parts = raw.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
         var valueStr = parts.Length > 0 ? parts[0].Replace(",", ".") : "0";
@@ -207,7 +313,7 @@ public class FddbScrapingService(
             ? result
             : 0;
 
-        return new Models.Fddb.NutritionalValue
+        return new NutritionalValue
         {
             Value = value,
             Unit = unit
