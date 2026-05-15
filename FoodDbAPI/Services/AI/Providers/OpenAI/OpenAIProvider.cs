@@ -168,9 +168,27 @@ public class OpenAIProvider : IAIProvider
     {
         var options = new ChatCompletionOptions
         {
-            MaxOutputTokenCount = _settings.MaxTokens,
-            Temperature = _settings.Temperature
+            MaxOutputTokenCount = _settings.MaxTokens
         };
+
+        // o-series models use reasoning_effort instead of temperature.
+        // Setting both causes an API error, so we use one or the other.
+        if (!string.IsNullOrWhiteSpace(_settings.ReasoningEffort))
+        {
+#pragma warning disable OPENAI001
+            options.ReasoningEffortLevel = _settings.ReasoningEffort.ToLowerInvariant() switch
+            {
+                "low"    => ChatReasoningEffortLevel.Low,
+                "medium" => ChatReasoningEffortLevel.Medium,
+                "high"   => ChatReasoningEffortLevel.High,
+                _        => null
+            };
+#pragma warning restore OPENAI001
+        }
+        else
+        {
+            options.Temperature = _settings.Temperature;
+        }
 
         if (tools is not { Count: > 0 })
             return options;

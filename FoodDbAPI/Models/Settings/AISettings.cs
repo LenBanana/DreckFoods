@@ -16,6 +16,13 @@ public class OpenAIProviderSettings
 
     public int MaxTokens { get; set; } = 4096;
 
-    /// <summary>Sampling temperature in [0, 2]. Lower = more deterministic.</summary>
+    /// <summary>Sampling temperature in [0, 2]. Lower = more deterministic. Ignored when ReasoningEffort is set.</summary>
     public float Temperature { get; set; } = 0.7f;
+
+    /// <summary>
+    /// Reasoning effort for o-series models: "low", "medium", or "high".
+    /// Set null/empty to use standard temperature-based sampling (gpt-series models).
+    /// When set, Temperature is not sent to the API.
+    /// </summary>
+    public string? ReasoningEffort { get; set; }
 }

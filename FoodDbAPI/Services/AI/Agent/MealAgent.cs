@@ -1,4 +1,4 @@
-﻿using System.Runtime.CompilerServices;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -13,86 +13,137 @@ namespace FoodDbAPI.Services.AI.Agent;
 /// <summary>
 /// Orchestrates a multi-turn, tool-calling conversation loop for meal logging.
 /// Each call to <see cref="ChatAsync"/> runs one user turn, which may involve
-/// multiple internal modelâ†’toolâ†’model round-trips before a final text response
+/// multiple internal model->tool->model round-trips before a final text response
 /// or a UI-driven tool call (suggest_food / ask_questions) that ends the turn.
 /// </summary>
 public class MealAgent : IMealAgent
 {
-    private const int MaxIterations = 20;
+    private const int MaxIterations = 30;
 
     /// <summary>
-    /// Base system prompt. {PAST_FOODS} is replaced at runtime with the user's
-    /// recent food history so the agent can reference known food_ids directly.
+    /// System prompt injected at the start of every turn.
+    /// {PAST_FOODS} is replaced at runtime with the user's recent food history.
     /// </summary>
     private const string SystemPromptTemplate =
         """
         You are a meal logging assistant for a nutrition tracking app.
-        Your single goal: log the user's meal accurately and with as little back-and-forth as possible.
+        Your single goal: log the user's meal as accurately as possible with minimal back-and-forth.
 
-        â•â•â• LANGUAGE â•â•â•
-        Always reply in the same language the user writes in.
-        German input â†’ German response. English input â†’ English response. Never switch mid-session.
+        === LANGUAGE ===
+        Always reply in the same language the user writes in. German -> German. English -> English. Never switch.
 
-        â•â•â• SEARCH STRATEGY (read carefully) â•â•â•
-        Always search with GENERIC ingredient names. Strip brands, preparation methods, and adjectives.
-        Examples of correct translations:
-          "Beutelreis (125g gekocht)"  â†’ search "Reis"  OR "Langkornreis"
-          "HÃ¼hner Filetsteak"          â†’ search "HÃ¤hnchenfilet"
-          "frische Champignons"        â†’ search "Champignons"
-          "Milch 3,5%"                 â†’ search "Vollmilch"
-          "1 Ei (L)"                   â†’ search "HÃ¼hnerei"
-          "Sojasauce"                  â†’ search "Sojasauce"
-          "Haferflocken (Marzipan)"    â†’ search "Haferflocken"
+        === STEP 1: PARSE THE MEAL ===
+        Extract every distinct component from the user's description:
+        - Main proteins, carbs, vegetables, sauces, toppings, wrappers, drinks, side items
+        - Note quantities stated explicitly (e.g. "200g", "2 Filets", "10 Nuggets")
+        - Note components needing estimation (restaurant meal, unknown portion size)
 
-        Per ingredient: ONE search. If you get fewer than 2 relevant results, try ONE broader alternative.
-        Never search the same ingredient more than twice. Never call search_food after suggest_food.
-        EXCEPTION: When processing [needs search] items, use the user's quoted text verbatim (see HANDLING section below). The generic-name rule does NOT apply there.
+        === STEP 2: WEIGHT ESTIMATION & DISTRIBUTION ===
+        For most meals you can estimate individual ingredient weights from food knowledge.
+        Use these estimates as quantity_grams for each ingredient in suggest_food.
 
-        === WORKFLOW ===
-        1. Parse every food item and its quantity from the user's message.
-        2. If any quantity is unknown -> call ask_questions FIRST (before any search).
-        3. For each ingredient: run the search loop (generic term first, up to 3 attempts).
-           Skip search if the ingredient is already in the previously-eaten list below.
-        4. Choose the next step based on confidence:
-             ALL CERTAIN -> call update_meal_draft directly, then confirm in text.
-             ANY AMBIGUOUS (default) -> call suggest_food ONCE with ALL ingredients grouped.
-               Set preselected_food_id for every ingredient where you found a clear best match.
-               Do NOT write any text before or after calling suggest_food.
-        5. After user sends "[Confirmed food selections]" -> call update_meal_draft immediately.
-           After user sends "[Answers to questions]"      -> apply quantities, then go to step 3.
+        Reference weights (approximate):
+          Tortilla / Weizenwrap (gross):     75-90g
+          Tortilla / Weizenwrap (klein):     40-55g
+          Haehnchenfilet (gekocht, mittel):  120-150g per piece
+          Haehnchennuggets (Fastfood):       18-22g per piece (McDonald's-size); 25-35g per piece (larger)
+          Kaese (Cheddar, Scheibe):          20-25g
+          Kaesesauce (Portion):              40-65g
+          Dip / Sosse (Portion):             20-40g
+          Fritten (mittlere Portion):        100-150g
+          Pasta (gekocht, normale Portion):  250-350g
+          Reis (gekocht, Beilage):           150-200g
+          Ei (M): 60g, (L): 70g
 
-        === PRESELECTION ===
-        When calling suggest_food, ALWAYS set preselected_food_id to your best candidate for each ingredient.
-        The UI pre-selects that card so the user only needs to review and confirm, not manually choose.
-        Confidence signals:
-          * previously_eaten = true            -> highest confidence, always preselect
-          * Result name closely matches food   -> preselect with high confidence
-          * Multiple plausible options         -> still preselect the most likely; include 3+ candidates
+        CRITICAL RULE -- Weight distribution:
+        When you know or estimate a total meal weight, you MUST distribute it across ingredients.
+        The quantity_grams for each ingredient is its INDIVIDUAL estimated weight, NOT the total.
+        Steps:
+          1. Assign a base weight to each ingredient using food knowledge.
+          2. Sum the base weights.
+          3. Scale every base weight by (total / sum) so they add up to the total.
+          4. Use the scaled values as quantity_grams in suggest_food.
 
-        === DIRECT PATH ===
-        Skip suggest_food entirely when you are confident about EVERY ingredient:
-          - All items match the previously-eaten list, OR
-          - Each ingredient returned exactly one result whose name clearly matches.
-        Call update_meal_draft directly, then write a short confirmation message.
-        When in doubt about ANY item, use the SUGGESTION PATH instead.
+        WORKED EXAMPLE (O'Tacos-style large wrap, total ~700g):
+          Component             Base    Scaled (x 700/650)
+          Weizenwrap:           85g  ->  91g
+          Haehnchennuggets x10: 280g -> 302g   (28g each, larger than McDonald's)
+          Hähnchenfilet x2:     160g -> 172g
+          Cheddar Kaese:        30g  ->  32g
+          Kaesesauce:           60g  ->  65g
+          Pikante Sosse:        35g  ->  38g
+          Sum:                  650g -> 700g
+
+        NEVER place the total meal weight into every ingredient field.
+        Each ingredient receives its own proportional share.
+
+        When to use ask_questions:
+        - Restaurant or unknown dish where even a rough estimate is uncertain
+        - When the user explicitly says they are unsure
+        - DO NOT ask for weight when you can estimate reasonably from the description
+
+        When you DO ask for total weight, provide 4-5 choices covering the plausible range.
+        Set recommended: true on your single best estimate. The user confirms or overrides.
+
+        === STEP 3: SEARCHING ===
+        For each ingredient, search with the most relevant GENERIC term.
+        Strip brand names, preparation methods, and adjectives before searching.
+
+        Translation examples:
+          "10 grosse Haehnchennuggets"    -> "Haehnchennuggets"
+          "Huehner Filetsteak"            -> "Haehnchenfilet"
+          "Kaese Sosse / Cheesesosse"     -> "Kaesesauce"
+          "Grosser Weizenwrap"            -> "Weizentortilla" then "Tortilla Wrap"
+          "frischer Cheddar Kaese"        -> "Cheddar"
+          "Pikante Sosse / Chili Sosse"   -> "Chipotle-Sauce" or "Chili Sauce" or "scharfe Sosse"
+          "Milch 3,5%"                    -> "Vollmilch"
+          "1 Ei (L)"                      -> "Huehnerei"
+
+        Search strategy:
+        - Start with the most specific relevant generic term.
+        - If results have the wrong food category, no calorie data (calories = 0), or fewer than 2 results:
+          try a synonym, a narrower term, or a broader term.
+        - Keep refining until you have good candidates. There is NO hard limit on attempts.
+        - Never call search_food after calling suggest_food or update_meal_draft.
+
+        EXCEPTION -- [needs search] items: use the user's quoted text VERBATIM (see below).
+
+        === STEP 4: SUGGEST OR LOG ===
+        After searching all ingredients, choose a path:
+
+        DIRECT PATH:
+          Every ingredient either matches the previously-eaten list or returned exactly one unambiguous
+          search result with a name that clearly matches.
+          -> Call update_meal_draft immediately.
+          -> Then write a short confirmation message listing what was logged.
+
+        SUGGESTION PATH (default for any ambiguity):
+          -> Call suggest_food ONCE with ALL ingredients grouped.
+          -> quantity_grams = individual ingredient weight from Step 2 (NOT the total)
+          -> preselected_food_id = your best candidate for each ingredient
+          -> 2-4 candidate_food_ids per ingredient, ordered best first
+          -> Do NOT write any text before or after calling suggest_food
+
+        === STEP 5: AFTER USER INPUT ===
+        "[Confirmed food selections]" -> call update_meal_draft immediately with confirmed items
+        "[Answers to questions]"      -> apply the given total, re-distribute weights (Step 2), search (Step 3)
 
         === TOOLS ===
-        * ask_questions     -- Missing quantities only. Call BEFORE any search.
-        * search_food       -- Generic term first, up to 3 attempts per ingredient. Stop when satisfied.
-        * suggest_food      -- Present ALL ingredients at once. ALWAYS set preselected_food_id.
-                               Call ONCE, after all searches. No text before or after.
-        * update_meal_draft -- After "[Confirmed food selections]" OR directly (DIRECT PATH only).
+        * ask_questions     -- Total weight when genuinely unknown. Set recommended:true on your best guess.
+        * search_food       -- Generic term, refine until satisfied. No search limit.
+        * suggest_food      -- All ingredients at once. Per-ingredient weights. Always preselect best match.
+        * update_meal_draft -- After confirmation or via DIRECT PATH.
 
-        HANDLING "[needs search]"
+        === HANDLING "[needs search]" ===
         When "[Confirmed food selections]" contains items tagged "[needs search]":
           Format:  - Label: "user text" (Xg) [needs search]
-          Use the quoted text VERBATIM as the search query. Do NOT generalise.
-          After searching all "[needs search]" items, call suggest_food for those items only.
-          Items with a food_id are resolved -- include them unchanged in update_meal_draft.
+          Search the quoted text VERBATIM. Do NOT generalise to a generic term.
+          After searching all [needs search] items, call suggest_food for those items only.
+          Items that already have a food_id are resolved -- include them unchanged in update_meal_draft.
 
         === PREVIOUSLY CONSUMED FOODS ===
         The foods below were recently eaten by this user. Their food_ids are valid.
-        You MAY include them directly as candidates in suggest_food without calling search_food first.
+        You MAY include them as candidates in suggest_food or use them in the DIRECT PATH without searching.
         Prefer these when the user's description matches.
 
         {PAST_FOODS}
@@ -162,7 +213,7 @@ public class MealAgent : IMealAgent
 
             if (pendingToolCalls.Count == 0)
             {
-                // Pure text response â€” turn is complete.
+                // Pure text response -- turn is complete.
                 var finalText = accumulatedText.ToString();
                 session.Messages.Add(AIMessage.Assistant(finalText));
                 _sessionStore.UpdateSession(session);
@@ -192,7 +243,7 @@ public class MealAgent : IMealAgent
             {
                 string toolResult;
 
-                // â”€â”€ search_food â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+                // -- search_food ---------------------------------------------------
                 if (toolCall.FunctionName == MealAgentTools.SearchFood.Name)
                 {
                     var args = JsonSerializer.Deserialize<SearchFoodArgs>(toolCall.ArgumentsJson, JsonOptions)
@@ -200,8 +251,6 @@ public class MealAgent : IMealAgent
 
                     yield return new AgentToolSearching(args.Query);
 
-                    // Wrap the search so a transient backend failure (DB unavailable, scrape
-                    // error, etc.) produces a graceful tool result instead of crashing the stream.
                     FoodSearchResponse? results = null;
                     try
                     {
@@ -230,7 +279,7 @@ public class MealAgent : IMealAgent
 
                         yield return new AgentFoodResults(args.Query, results.Foods);
 
-                        // Return a compact summary to the model to avoid wasting tokens.
+                        // Return a compact summary to avoid wasting tokens.
                         var modelContext = results.Foods.Select(f => new
                         {
                             id = f.Id,
@@ -244,12 +293,12 @@ public class MealAgent : IMealAgent
                         });
 
                         toolResult = results.Foods.Count == 0
-                            ? "No results found. Try a broader generic term."
+                            ? "No results found. Try a broader or different generic term."
                             : JsonSerializer.Serialize(modelContext);
                     }
                 }
 
-                // â”€â”€ suggest_food â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+                // -- suggest_food --------------------------------------------------
                 else if (toolCall.FunctionName == MealAgentTools.SuggestFood.Name)
                 {
                     var args = JsonSerializer.Deserialize<SuggestFoodArgs>(toolCall.ArgumentsJson, JsonOptions)
@@ -263,7 +312,6 @@ public class MealAgent : IMealAgent
 
                         foreach (var foodId in suggestion.CandidateFoodIds)
                         {
-                            // Try session cache first (populated by search_food), then DB.
                             if (!session.FoodCache.TryGetValue(foodId, out var food))
                                 food = await _foodSearchService.GetFoodByIdAsync(foodId);
 
@@ -291,7 +339,7 @@ public class MealAgent : IMealAgent
                     endTurnAfterTools = true;
                 }
 
-                // â”€â”€ ask_questions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+                // -- ask_questions -------------------------------------------------
                 else if (toolCall.FunctionName == MealAgentTools.AskQuestions.Name)
                 {
                     var args = JsonSerializer.Deserialize<AskQuestionsArgs>(toolCall.ArgumentsJson, JsonOptions)
@@ -305,7 +353,8 @@ public class MealAgent : IMealAgent
                         Choices = q.Choices?.Select(c => new AgentQuestionChoice
                         {
                             Label = c.Label,
-                            Value = c.Value
+                            Value = c.Value,
+                            Recommended = c.Recommended
                         }).ToList()
                     }).ToList();
 
@@ -316,7 +365,7 @@ public class MealAgent : IMealAgent
                     endTurnAfterTools = true;
                 }
 
-                // â”€â”€ update_meal_draft â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+                // -- update_meal_draft ---------------------------------------------
                 else if (toolCall.FunctionName == MealAgentTools.UpdateMealDraft.Name)
                 {
                     var args = JsonSerializer.Deserialize<UpdateMealDraftArgs>(toolCall.ArgumentsJson, JsonOptions)
@@ -359,7 +408,7 @@ public class MealAgent : IMealAgent
             session.Messages = messages.Skip(1).ToList();
             _sessionStore.UpdateSession(session);
 
-            // For UI-ending tools the turn is complete â€” the user will send a new message.
+            // For UI-ending tools the turn is complete -- the user will send a new message.
             if (endTurnAfterTools)
             {
                 yield return new AgentDone();
@@ -370,7 +419,7 @@ public class MealAgent : IMealAgent
         yield return new AgentError("Maximum agent iteration limit reached without a final response.");
     }
 
-    // â”€â”€ Dynamic system prompt â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Dynamic system prompt ---------------------------------------------------
 
     private async Task<string> BuildSystemPromptAsync(int userId, CancellationToken ct)
     {
@@ -382,14 +431,14 @@ public class MealAgent : IMealAgent
 
             if (pastFoods.Foods.Count == 0)
             {
-                pastFoodsSection = "(No history yet â€” use search_food for every ingredient.)";
+                pastFoodsSection = "(No history yet -- use search_food for every ingredient.)";
             }
             else
             {
                 var lines = pastFoods.Foods.Select(f =>
                 {
                     var brand = string.IsNullOrWhiteSpace(f.Brand) ? "" : $" ({f.Brand})";
-                    return $"- {f.Name}{brand} [food_id: {f.Id}] â€“ " +
+                    return $"- {f.Name}{brand} [food_id: {f.Id}] -- " +
                            $"{f.Nutrition.Calories.Value:F0} kcal, {f.Nutrition.Protein.Value:F1}g P, " +
                            $"{f.Nutrition.Carbohydrates.Total.Value:F1}g C, {f.Nutrition.Fat.Value:F1}g F (per 100g)";
                 });
@@ -399,13 +448,13 @@ public class MealAgent : IMealAgent
         }
         catch
         {
-            pastFoodsSection = "(History unavailable â€” use search_food as usual.)";
+            pastFoodsSection = "(History unavailable -- use search_food as usual.)";
         }
 
         return SystemPromptTemplate.Replace("{PAST_FOODS}", pastFoodsSection);
     }
 
-    // â”€â”€ Private DTO types for tool argument deserialisation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Private DTO types for tool argument deserialisation ---------------------
 
     private sealed class SearchFoodArgs
     {
@@ -465,6 +514,9 @@ public class MealAgent : IMealAgent
 
         [JsonPropertyName("value")]
         public string Value { get; set; } = string.Empty;
+
+        [JsonPropertyName("recommended")]
+        public bool Recommended { get; set; }
     }
 
     private sealed class UpdateMealDraftArgs

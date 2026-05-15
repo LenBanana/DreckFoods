@@ -107,7 +107,8 @@ public static class MealAgentTools
                           "type": "object",
                           "properties": {
                             "label": { "type": "string", "description": "Button text shown to user" },
-                            "value": { "type": "string", "description": "Value sent back in the answer, e.g. \"15g\"" }
+                            "value": { "type": "string", "description": "Value sent back in the answer, e.g. \"15g\"" },
+                            "recommended": { "type": "boolean", "description": "Set true on the single choice you consider the best estimate. The UI pre-selects it for the user." }
                           },
                           "required": ["label", "value"]
                         }

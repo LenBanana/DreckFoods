@@ -76,4 +76,10 @@ public class AgentQuestionChoice
 {
     public string Label { get; init; } = string.Empty;
     public string Value { get; init; } = string.Empty;
+
+    /// <summary>
+    /// When true, the UI pre-selects this choice as the agent's best estimate.
+    /// Mirrors the preselected_food_id concept from <see cref="FoodSuggestionGroup"/>.
+    /// </summary>
+    public bool Recommended { get; init; }
 }
