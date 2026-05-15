@@ -189,36 +189,53 @@ public class MealAgent : IMealAgent
 
                     yield return new AgentToolSearching(args.Query);
 
-                    var results = await _foodSearchService.SearchFoodsAsync(
-                        query: args.Query,
-                        userId: session.UserId,
-                        page: 1,
-                        pageSize: 7,
-                        sortBy: FoodSortBy.Name,
-                        sortDirection: SortDirection.Ascending);
-
-                    // Cache results for suggest_food and update_meal_draft lookups.
-                    foreach (var food in results.Foods)
-                        session.FoodCache[food.Id] = food;
-
-                    yield return new AgentFoodResults(args.Query, results.Foods);
-
-                    // Return a compact summary to the model to avoid wasting tokens.
-                    var modelContext = results.Foods.Select(f => new
+                    // Wrap the search so a transient backend failure (DB unavailable, scrape
+                    // error, etc.) produces a graceful tool result instead of crashing the stream.
+                    FoodSearchResponse? results = null;
+                    try
                     {
-                        id = f.Id,
-                        name = f.Name,
-                        brand = f.Brand,
-                        calories_per_100g = f.Nutrition.Calories.Value,
-                        protein_per_100g = f.Nutrition.Protein.Value,
-                        carbs_per_100g = f.Nutrition.Carbohydrates.Total.Value,
-                        fat_per_100g = f.Nutrition.Fat.Value,
-                        previously_eaten = f.PreviouslyEaten
-                    });
+                        results = await _foodSearchService.SearchFoodsAsync(
+                            query: args.Query,
+                            userId: session.UserId,
+                            page: 1,
+                            pageSize: 7,
+                            sortBy: FoodSortBy.Name,
+                            sortDirection: SortDirection.Ascending);
+                    }
+                    catch (Exception)
+                    {
+                        // FoodSearchService already logs the underlying error.
+                    }
 
-                    toolResult = results.Foods.Count == 0
-                        ? "No results found. Try a broader generic term."
-                        : JsonSerializer.Serialize(modelContext);
+                    if (results == null)
+                    {
+                        toolResult = "Search temporarily unavailable. Try a different term or proceed with known food_ids.";
+                    }
+                    else
+                    {
+                        // Cache results for suggest_food and update_meal_draft lookups.
+                        foreach (var food in results.Foods)
+                            session.FoodCache[food.Id] = food;
+
+                        yield return new AgentFoodResults(args.Query, results.Foods);
+
+                        // Return a compact summary to the model to avoid wasting tokens.
+                        var modelContext = results.Foods.Select(f => new
+                        {
+                            id = f.Id,
+                            name = f.Name,
+                            brand = f.Brand,
+                            calories_per_100g = f.Nutrition.Calories.Value,
+                            protein_per_100g = f.Nutrition.Protein.Value,
+                            carbs_per_100g = f.Nutrition.Carbohydrates.Total.Value,
+                            fat_per_100g = f.Nutrition.Fat.Value,
+                            previously_eaten = f.PreviouslyEaten
+                        });
+
+                        toolResult = results.Foods.Count == 0
+                            ? "No results found. Try a broader generic term."
+                            : JsonSerializer.Serialize(modelContext);
+                    }
                 }
 
                 // â”€â”€ suggest_food â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

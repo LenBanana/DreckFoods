@@ -12,6 +12,8 @@ public class FddbScrapingService(
     IConfiguration configuration,
     ILogger<FddbScrapingService> logger) : IFddbScrapingService
 {
+    // Limit concurrent outbound requests to fddb.info globally (shared across all service instances).
+    private static readonly SemaphoreSlim ConcurrencyLimiter = new(3, 3);
     public async Task<List<FddbFoodImportDto>> FindFoodItemByNameAsync(string foodName,
         CancellationToken cancellationToken = default)
     {
@@ -34,7 +36,7 @@ public class FddbScrapingService(
             {
                 var url = response.RequestMessage.RequestUri.AbsolutePath;
                 var relativeUrl = url.Replace("https://fddb.info", string.Empty);
-                var foodItem = await ProcessUrlWithRetryAsync(relativeUrl, maxRetries: 3, cancellationToken);
+                var foodItem = await ProcessUrlWithRetryAsync(relativeUrl, maxRetries: 5, cancellationToken);
                 return foodItem != null ? [foodItem] : [];
             }
 
@@ -52,28 +54,21 @@ public class FddbScrapingService(
                 return [];
             }
 
-            // Extract every URL from the onclick attribute and use the ParseFoodItem method to get details
-            var foodDetails = new List<FddbFoodImportDto>();
             var urlRegex = new Regex(@"window\.location\.href='(/db/de/lebensmittel/[^']+)'");
-            
-            // Try to get amount to scrape from configuration, default to 100 if not set
             var maxItemsToScrape = configuration.GetValue("Fddb:MaxItemsToScrape", 100);
 
-            foreach (var item in foodItems.Take(maxItemsToScrape))
-            {
-                var onclick = item.GetAttributeValue("onclick", string.Empty);
-                var urlMatch = urlRegex.Match(onclick);
+            // Extract all matching food page URLs then fetch each in parallel, bounded by
+            // ConcurrencyLimiter, so the scrape is fast without hammering the server.
+            var foodUrls = foodItems.Take(maxItemsToScrape)
+                .Select(item => urlRegex.Match(item.GetAttributeValue("onclick", string.Empty)))
+                .Where(m => m.Success)
+                .Select(m => m.Groups[1].Value)
+                .ToList();
 
-                if (!urlMatch.Success) continue;
+            var scraped = await Task.WhenAll(
+                foodUrls.Select(foodUrl => ProcessUrlWithRetryAsync(foodUrl, maxRetries: 5, cancellationToken)));
 
-                var foodUrl = urlMatch.Groups[1].Value;
-                var foodItem = await ProcessUrlWithRetryAsync(foodUrl, maxRetries: 3, cancellationToken);
-
-                if (foodItem == null) continue;
-
-                foodDetails.Add(foodItem);
-                logger.LogDebug("Found food item: {FoodName} ({Url})", foodItem.Name, foodItem.Url);
-            }
+            var foodDetails = scraped.OfType<FddbFoodImportDto>().ToList();
 
             logger.LogInformation("Found {Count} food items for '{FoodName}'", foodDetails.Count, foodName);
             return foodDetails;
@@ -88,50 +83,86 @@ public class FddbScrapingService(
     private async Task<FddbFoodImportDto?> ProcessUrlWithRetryAsync(
         string url, int maxRetries, CancellationToken cancellationToken)
     {
-        var attempts = 0;
         var uri = $"https://fddb.info{url}";
 
-        while (attempts <= maxRetries)
+        // Acquire a slot before making any network call so we never exceed ConcurrencyLimiter
+        // simultaneous connections to fddb.info across all parallel tasks.
+        await ConcurrencyLimiter.WaitAsync(cancellationToken);
+        try
         {
-            try
+            for (var attempt = 0; attempt <= maxRetries; attempt++)
             {
-                var response = await httpClient.GetAsync(
-                    uri, HttpCompletionOption.ResponseContentRead, cancellationToken);
-
-                if (!response.IsSuccessStatusCode)
+                try
                 {
-                    if ((int)response.StatusCode >= 500 && attempts < maxRetries)
+                    var response = await httpClient.GetAsync(
+                        uri, HttpCompletionOption.ResponseContentRead, cancellationToken);
+
+                    // Explicit rate-limit handling: honour Retry-After when present.
+                    if ((int)response.StatusCode == 429)
                     {
-                        attempts++;
-                        var delay = TimeSpan.FromSeconds(Math.Pow(2, attempts));
-                        await Task.Delay(delay, cancellationToken);
+                        if (attempt >= maxRetries) break;
+                        var retryAfter = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(30);
+                        var rl429Delay = retryAfter + TimeSpan.FromMilliseconds(Random.Shared.Next(0, 2000));
+                        logger.LogWarning(
+                            "Rate limited by fddb.info for {Url}, waiting {Delay:F0}s (attempt {Attempt}/{MaxRetries})",
+                            uri, rl429Delay.TotalSeconds, attempt + 1, maxRetries);
+                        await Task.Delay(rl429Delay, cancellationToken);
                         continue;
                     }
 
-                    logger.LogWarning("Failed to fetch food item from {Url}: {StatusCode}", uri, response.StatusCode);
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        if ((int)response.StatusCode >= 500 && attempt < maxRetries)
+                        {
+                            await Task.Delay(ExponentialDelay(attempt), cancellationToken);
+                            continue;
+                        }
+
+                        logger.LogWarning("Failed to fetch food item from {Url}: {StatusCode}", uri, response.StatusCode);
+                        return null;
+                    }
+
+                    var html = await response.Content.ReadAsStringAsync(cancellationToken);
+                    return ParseFoodItem(html, uri);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw; // Always propagate — covers both user cancellation and HttpClient timeout.
+                }
+                catch (Exception ex) when (IsTransientException(ex)
+                                           && attempt < maxRetries
+                                           && !cancellationToken.IsCancellationRequested)
+                {
+                    var delay = ExponentialDelay(attempt);
+                    logger.LogWarning(ex,
+                        "Transient error for {Url}, retrying in {Delay:F1}s (attempt {Attempt}/{MaxRetries})",
+                        uri, delay.TotalSeconds, attempt + 1, maxRetries);
+                    await Task.Delay(delay, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Error processing food item from {Url}", uri);
                     return null;
                 }
-
-                var html = await response.Content.ReadAsStringAsync(cancellationToken);
-                return ParseFoodItem(html, uri);
-            }
-            catch (Exception ex) when (IsTransientException(ex) && attempts < maxRetries)
-            {
-                attempts++;
-                var delay = TimeSpan.FromSeconds(Math.Pow(2, attempts));
-                logger.LogWarning(ex,
-                    "Transient error processing {Url}, retrying in {Delay}s (attempt {Attempt}/{MaxRetries})",
-                    uri, delay.TotalSeconds, attempts, maxRetries);
-                await Task.Delay(delay, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Error processing food item from {Url}", uri);
-                return null;
             }
         }
+        finally
+        {
+            ConcurrencyLimiter.Release();
+        }
 
+        logger.LogWarning("All {MaxRetries} retries exhausted for {Url}", maxRetries, uri);
         return null;
+    }
+
+    /// <summary>
+    /// Exponential backoff: 2^(attempt+1) seconds, capped at 60 s, with ±25 % random jitter.
+    /// </summary>
+    private static TimeSpan ExponentialDelay(int attempt)
+    {
+        var baseSeconds = Math.Min(Math.Pow(2, attempt + 1), 60.0);
+        var jitter = 0.75 + Random.Shared.NextDouble() * 0.5; // [0.75, 1.25]
+        return TimeSpan.FromSeconds(baseSeconds * jitter);
     }
 
     private FddbFoodImportDto ParseFoodItem(string html, string uri)
@@ -322,7 +353,8 @@ public class FddbScrapingService(
 
     private static bool IsTransientException(Exception ex)
     {
-        return ex is HttpRequestException or IOException or SocketException
-            or TaskCanceledException or TimeoutException;
+        // TaskCanceledException is intentionally excluded — handled separately so that
+        // user-initiated cancellation and HttpClient timeouts are never silently retried.
+        return ex is HttpRequestException or IOException or SocketException or TimeoutException;
     }
 }
