@@ -168,7 +168,8 @@ public class OpenAIProvider : IAIProvider
         var opts = new CreateResponseOptions
         {
             Model = _settings.Model,
-            MaxOutputTokenCount = _settings.MaxTokens
+            MaxOutputTokenCount = _settings.MaxTokens,
+            StreamingEnabled = true
         };
 
         if (instructions is not null)
