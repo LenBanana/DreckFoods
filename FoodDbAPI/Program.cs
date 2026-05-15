@@ -117,7 +117,7 @@ builder.Services.AddScoped<IWeightService, WeightService>();
 builder.Services.AddScoped<IFddbEditorService, FddbEditorService>();
 builder.Services.AddHttpClient<IFddbScrapingService, FddbScrapingService>(client =>
 {
-    client.Timeout = TimeSpan.FromSeconds(30);
+    client.Timeout = TimeSpan.FromSeconds(10);
     client.DefaultRequestHeaders.Add("User-Agent",
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:139.0) Gecko/20100101 Firefox/139.0");
     client.DefaultRequestHeaders.Add("Accept",
