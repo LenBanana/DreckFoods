@@ -1,30 +1,29 @@
 using System.Runtime.CompilerServices;
-using System.Text;
 using FoodDbAPI.Models.Settings;
 using FoodDbAPI.Services.AI.Abstractions;
 using Microsoft.Extensions.Options;
 using OpenAI;
-using OpenAI.Chat;
+using OpenAI.Responses;
 using System.ClientModel;
+
+#pragma warning disable OPENAI001 // Responses API is experimental in this SDK version
 
 namespace FoodDbAPI.Services.AI.Providers.OpenAI;
 
 /// <summary>
-/// OpenAI implementation of <see cref="IAIProvider"/>.
-/// Uses the official OpenAI .NET SDK (v2.x) internally — tool-call argument
-/// accumulation across streaming chunks is handled by the SDK automatically.
+/// OpenAI Responses API (<c>/v1/responses</c>) implementation of <see cref="IAIProvider"/>.
+/// Supports <c>reasoning_effort</c> together with function tools, unlike the Chat Completions endpoint.
 /// </summary>
 public class OpenAIProvider : IAIProvider
 {
-    private readonly ChatClient _client;
+    private readonly ResponsesClient _client;
     private readonly OpenAIProviderSettings _settings;
 
     public OpenAIProvider(IOptions<AISettings> options)
     {
         _settings = options.Value.OpenAI;
-        _client = new ChatClient(
-            model: _settings.Model,
-            credential: new ApiKeyCredential(_settings.ApiKey));
+        _client = new OpenAIClient(new ApiKeyCredential(_settings.ApiKey))
+            .GetResponsesClient();
     }
 
     public async IAsyncEnumerable<AIStreamEvent> StreamAsync(
@@ -32,28 +31,37 @@ public class OpenAIProvider : IAIProvider
         IList<AIToolDefinition>? tools = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var chatMessages = messages.Select(MapToChatMessage).ToList();
-        var options = BuildOptions(tools);
+        // System message maps to Instructions; all others become input items.
+        string? instructions = null;
+        var inputItems = new List<ResponseItem>();
 
-        // Per-tool-call state: keyed by stream index
-        var toolCallIds   = new Dictionary<int, string>();
-        var toolCallNames = new Dictionary<int, string>();
-        var toolCallArgs  = new Dictionary<int, StringBuilder>();
-        var doneEmitted   = false;
+        foreach (var msg in messages)
+        {
+            if (msg.Role == AIRole.System)
+            {
+                instructions = msg.Content;
+                continue;
+            }
 
-        AsyncCollectionResult<StreamingChatCompletionUpdate> stream;
+            foreach (var item in MapToResponseItems(msg))
+                inputItems.Add(item);
+        }
+
+        var opts = BuildOptions(instructions, tools);
+        foreach (var item in inputItems)
+            opts.InputItems.Add(item);
+
+        AsyncCollectionResult<StreamingResponseUpdate> stream;
         try
         {
-            stream = _client.CompleteChatStreamingAsync(chatMessages, options, cancellationToken);
+            stream = _client.CreateResponseStreamingAsync(opts, cancellationToken);
         }
         catch (Exception ex)
         {
-            throw new AIProviderException("Failed to start OpenAI streaming request.", ex);
+            throw new AIProviderException("Failed to start OpenAI Responses streaming request.", ex);
         }
 
-        // Use manual enumerator so we can wrap MoveNextAsync() in try/catch.
-        // C# iterators forbid yield inside try/catch, but the yield statements
-        // below are outside the inner catch — only the MoveNextAsync call is guarded.
+        var doneEmitted = false;
         var enumerator = stream.WithCancellation(cancellationToken).GetAsyncEnumerator();
         try
         {
@@ -72,61 +80,39 @@ public class OpenAIProvider : IAIProvider
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     throw new AIProviderException(
-                        $"OpenAI streaming failed: {ex.Message}", ex);
+                        $"OpenAI Responses streaming failed: {ex.Message}", ex);
                 }
 
                 if (!hasNext) break;
 
                 var update = enumerator.Current;
 
-                // ── Text content ─────────────────────────────────────────────────
-                foreach (var part in update.ContentUpdate)
+                if (update is StreamingResponseOutputTextDeltaUpdate textDelta
+                    && !string.IsNullOrEmpty(textDelta.Delta))
                 {
-                    if (part.Kind == ChatMessageContentPartKind.Text && !string.IsNullOrEmpty(part.Text))
-                        yield return new TextChunkEvent(part.Text);
+                    yield return new TextChunkEvent(textDelta.Delta);
                 }
-
-                // ── Tool call fragments ───────────────────────────────────────────
-                foreach (var tcUpdate in update.ToolCallUpdates)
+                else if (update is StreamingResponseCompletedUpdate completed)
                 {
-                    var idx = tcUpdate.Index;
-
-                    if (!string.IsNullOrEmpty(tcUpdate.ToolCallId))
-                        toolCallIds[idx] = tcUpdate.ToolCallId;
-
-                    if (!string.IsNullOrEmpty(tcUpdate.FunctionName))
-                        toolCallNames[idx] = tcUpdate.FunctionName;
-
-                    if (!toolCallArgs.ContainsKey(idx))
-                        toolCallArgs[idx] = new StringBuilder();
-
-                    if (tcUpdate.FunctionArgumentsUpdate is not null)
-                        toolCallArgs[idx].Append(tcUpdate.FunctionArgumentsUpdate);
-                }
-
-                // ── Finish reasons ────────────────────────────────────────────────
-                if (update.FinishReason == ChatFinishReason.ToolCalls)
-                {
-                    // Emit one completed event per tool call, ordered by index
-                    foreach (var idx in toolCallIds.Keys.OrderBy(i => i))
+                    // Emit one ToolCallCompletedEvent per function call in the output.
+                    foreach (var item in completed.Response.OutputItems)
                     {
-                        var id   = toolCallIds.TryGetValue(idx, out var tid) ? tid : string.Empty;
-                        var name = toolCallNames.TryGetValue(idx, out var tn) ? tn : string.Empty;
-                        var args = toolCallArgs.TryGetValue(idx, out var ta) ? ta.ToString() : "{}";
-                        yield return new ToolCallCompletedEvent(id, name, args);
+                        if (item is FunctionCallResponseItem fc)
+                        {
+                            yield return new ToolCallCompletedEvent(
+                                fc.CallId,
+                                fc.FunctionName,
+                                fc.FunctionArguments.ToString());
+                        }
                     }
 
-                    toolCallIds.Clear();
-                    toolCallNames.Clear();
-                    toolCallArgs.Clear();
-
                     yield return new StreamDoneEvent();
                     doneEmitted = true;
                 }
-                else if (update.FinishReason == ChatFinishReason.Stop)
+                else if (update is StreamingResponseFailedUpdate failed)
                 {
-                    yield return new StreamDoneEvent();
-                    doneEmitted = true;
+                    throw new AIProviderException(
+                        $"OpenAI Responses failed: {failed.Response.Error?.Message ?? "Unknown error"}");
                 }
             }
         }
@@ -135,72 +121,95 @@ public class OpenAIProvider : IAIProvider
             await enumerator.DisposeAsync();
         }
 
-        // Defensive: ensure StreamDoneEvent is always emitted even if the
-        // stream ends without an explicit finish_reason (e.g. truncated response).
         if (!doneEmitted)
             yield return new StreamDoneEvent();
     }
 
     // ── Mapping helpers ───────────────────────────────────────────────────────
 
-    private static ChatMessage MapToChatMessage(AIMessage msg) => msg.Role switch
+    private static IEnumerable<ResponseItem> MapToResponseItems(AIMessage msg)
     {
-        AIRole.System => new SystemChatMessage(msg.Content ?? string.Empty),
+        switch (msg.Role)
+        {
+            case AIRole.User:
+                yield return ResponseItem.CreateUserMessageItem(msg.Content ?? string.Empty);
+                break;
 
-        AIRole.User => new UserChatMessage(msg.Content ?? string.Empty),
+            case AIRole.Assistant when msg.ToolCalls is { Count: > 0 }:
+                // An assistant turn that produced tool calls may also have text content.
+                // In the Responses API, text and function calls are separate output items.
+                if (!string.IsNullOrEmpty(msg.Content))
+                    yield return ResponseItem.CreateAssistantMessageItem(msg.Content);
 
-        AIRole.Assistant when msg.ToolCalls is { Count: > 0 } =>
-            new AssistantChatMessage(
-                msg.ToolCalls.Select(tc =>
-                    ChatToolCall.CreateFunctionToolCall(
+                foreach (var tc in msg.ToolCalls)
+                    yield return ResponseItem.CreateFunctionCallItem(
                         tc.Id,
                         tc.FunctionName,
-                        BinaryData.FromString(tc.ArgumentsJson)))),
+                        BinaryData.FromString(tc.ArgumentsJson));
+                break;
 
-        AIRole.Assistant => new AssistantChatMessage(msg.Content ?? string.Empty),
+            case AIRole.Assistant:
+                yield return ResponseItem.CreateAssistantMessageItem(msg.Content ?? string.Empty);
+                break;
 
-        AIRole.Tool => new ToolChatMessage(msg.ToolCallId!, msg.Content ?? string.Empty),
+            case AIRole.Tool:
+                yield return ResponseItem.CreateFunctionCallOutputItem(
+                    msg.ToolCallId!,
+                    msg.Content ?? string.Empty);
+                break;
 
-        _ => throw new ArgumentOutOfRangeException(nameof(msg), $"Unsupported AIRole: {msg.Role}")
-    };
+            default:
+                throw new ArgumentOutOfRangeException(nameof(msg), $"Unsupported AIRole: {msg.Role}");
+        }
+    }
 
-    private ChatCompletionOptions BuildOptions(IList<AIToolDefinition>? tools)
+    private CreateResponseOptions BuildOptions(string? instructions, IList<AIToolDefinition>? tools)
     {
-        var options = new ChatCompletionOptions
+        var opts = new CreateResponseOptions
         {
+            Model = _settings.Model,
             MaxOutputTokenCount = _settings.MaxTokens
         };
 
-        // o-series models use reasoning_effort instead of temperature.
-        // Setting both causes an API error, so we use one or the other.
+        if (instructions is not null)
+            opts.Instructions = instructions;
+
         if (!string.IsNullOrWhiteSpace(_settings.ReasoningEffort))
         {
-#pragma warning disable OPENAI001
-            options.ReasoningEffortLevel = _settings.ReasoningEffort.ToLowerInvariant() switch
+            var level = _settings.ReasoningEffort.ToLowerInvariant() switch
             {
-                "low"    => ChatReasoningEffortLevel.Low,
-                "medium" => ChatReasoningEffortLevel.Medium,
-                "high"   => ChatReasoningEffortLevel.High,
-                _        => null
+                "low"    => ResponseReasoningEffortLevel.Low,
+                "medium" => ResponseReasoningEffortLevel.Medium,
+                "high"   => ResponseReasoningEffortLevel.High,
+                _        => (ResponseReasoningEffortLevel?)null
             };
-#pragma warning restore OPENAI001
+
+            if (level is not null)
+                opts.ReasoningOptions = new ResponseReasoningOptions
+                {
+                    ReasoningEffortLevel = level.Value
+                };
         }
         else
         {
-            options.Temperature = _settings.Temperature;
+            opts.Temperature = _settings.Temperature;
         }
 
-        if (tools is not { Count: > 0 })
-            return options;
-
-        foreach (var tool in tools)
+        if (tools is { Count: > 0 })
         {
-            options.Tools.Add(ChatTool.CreateFunctionTool(
-                functionName: tool.Name,
-                functionDescription: tool.Description,
-                functionParameters: BinaryData.FromString(tool.ParametersJsonSchema.GetRawText())));
+            foreach (var tool in tools)
+            {
+                opts.Tools.Add(ResponseTool.CreateFunctionTool(
+                    functionName: tool.Name,
+                    functionDescription: tool.Description,
+                    functionParameters: BinaryData.FromString(tool.ParametersJsonSchema.GetRawText()),
+                    strictModeEnabled: false));
+            }
         }
 
-        return options;
+        return opts;
     }
 }
+
+#pragma warning restore OPENAI001
+
