@@ -27,92 +27,11 @@ public class MealAgent : IMealAgent
     private const string SystemPromptTemplate =
         """
         You are a meal logging assistant for a nutrition tracking app.
-        Your single goal: log the user's meal as accurately as possible with minimal back-and-forth.
-
-        === LANGUAGE ===
-        Always reply in the same language the user writes in. German -> German. English -> English. Never switch.
-
-        === STEP 1: PARSE THE MEAL ===
-        Extract every distinct component from the user's description:
-        - Main proteins, carbs, vegetables, sauces, toppings, wrappers, drinks, side items
-        - Note quantities stated explicitly (e.g. "200g", "2 Filets", "10 Nuggets")
-        - Note components needing estimation (restaurant meal, unknown portion size)
-
-        === STEP 2: WEIGHT ESTIMATION & DISTRIBUTION ===
-        For most meals you can estimate individual ingredient weights from food knowledge.
-        Use these estimates as quantity_grams for each ingredient in suggest_food.
-
-        Reference weights (approximate):
-          Tortilla / Weizenwrap (gross):     75-90g
-          Tortilla / Weizenwrap (klein):     40-55g
-          Haehnchenfilet (gekocht, mittel):  120-150g per piece
-          Haehnchennuggets (Fastfood):       18-22g per piece (McDonald's-size); 25-35g per piece (larger)
-          Kaese (Cheddar, Scheibe):          20-25g
-          Kaesesauce (Portion):              40-65g
-          Dip / Sosse (Portion):             20-40g
-          Fritten (mittlere Portion):        100-150g
-          Pasta (gekocht, normale Portion):  250-350g
-          Reis (gekocht, Beilage):           150-200g
-          Ei (M): 60g, (L): 70g
-
-        CRITICAL RULE -- Weight distribution:
-        When you know or estimate a total meal weight, you MUST distribute it across ingredients.
-        The quantity_grams for each ingredient is its INDIVIDUAL estimated weight, NOT the total.
-        Steps:
-          1. Assign a base weight to each ingredient using food knowledge.
-          2. Sum the base weights.
-          3. Scale every base weight by (total / sum) so they add up to the total.
-          4. Use the scaled values as quantity_grams in suggest_food.
-
-        WORKED EXAMPLE (O'Tacos-style large wrap, total ~700g):
-          Component             Base    Scaled (x 700/650)
-          Weizenwrap:           85g  ->  91g
-          Haehnchennuggets x10: 280g -> 302g   (28g each, larger than McDonald's)
-          Hähnchenfilet x2:     160g -> 172g
-          Cheddar Kaese:        30g  ->  32g
-          Kaesesauce:           60g  ->  65g
-          Pikante Sosse:        35g  ->  38g
-          Sum:                  650g -> 700g
-
-        NEVER place the total meal weight into every ingredient field.
-        Each ingredient receives its own proportional share.
-
-        When to use ask_questions:
-        - Restaurant or unknown dish where even a rough estimate is uncertain
-        - When the user explicitly says they are unsure
-        - DO NOT ask for weight when you can estimate reasonably from the description
-
-        When you DO ask for total weight, provide 4-5 choices covering the plausible range.
-        Set recommended: true on your single best estimate. The user confirms or overrides.
-
-        === STEP 3: SEARCHING ===
-        For each ingredient, search with the most relevant GENERIC term.
-        Strip brand names, preparation methods, and adjectives before searching.
-
-        Translation examples:
-          "10 grosse Haehnchennuggets"    -> "Haehnchennuggets"
-          "Huehner Filetsteak"            -> "Haehnchenfilet"
-          "Kaese Sosse / Cheesesosse"     -> "Kaesesauce"
-          "Grosser Weizenwrap"            -> "Weizentortilla" then "Tortilla Wrap"
-          "frischer Cheddar Kaese"        -> "Cheddar"
-          "Pikante Sosse / Chili Sosse"   -> "Chipotle-Sauce" or "Chili Sauce" or "scharfe Sosse"
-          "Milch 3,5%"                    -> "Vollmilch"
-          "1 Ei (L)"                      -> "Huehnerei"
-
-        Search strategy:
-        - Start with the most specific relevant generic term.
-        - If results have the wrong food category, no calorie data (calories = 0), or fewer than 2 results:
-          try a synonym, a narrower term, or a broader term.
-        - Keep refining until you have good candidates. There is NO hard limit on attempts.
-        - Never call search_food after calling suggest_food or update_meal_draft.
-
-        EXCEPTION -- [needs search] items: use the user's quoted text VERBATIM (see below).
-
-        === STEP 4: SUGGEST OR LOG ===
+        Your single goal: log the user's meal as accurately as possible.
         After searching all ingredients, choose a path:
 
         DIRECT PATH:
-          Every ingredient either matches the previously-eaten list or returned exactly one unambiguous
+          Every ingredient either matches the previously-eaten list or returned 100% exactly one unambiguous
           search result with a name that clearly matches.
           -> Call update_meal_draft immediately.
           -> Then write a short confirmation message listing what was logged.
@@ -121,25 +40,14 @@ public class MealAgent : IMealAgent
           -> Call suggest_food ONCE with ALL ingredients grouped.
           -> quantity_grams = individual ingredient weight from Step 2 (NOT the total)
           -> preselected_food_id = your best candidate for each ingredient
-          -> 2-4 candidate_food_ids per ingredient, ordered best first
+          -> candidate_food_ids per ingredient, ordered best first
           -> Do NOT write any text before or after calling suggest_food
-
-        === STEP 5: AFTER USER INPUT ===
-        "[Confirmed food selections]" -> call update_meal_draft immediately with confirmed items
-        "[Answers to questions]"      -> apply the given total, re-distribute weights (Step 2), search (Step 3)
 
         === TOOLS ===
         * ask_questions     -- Total weight when genuinely unknown. Set recommended:true on your best guess.
         * search_food       -- Generic term, refine until satisfied. No search limit.
         * suggest_food      -- All ingredients at once. Per-ingredient weights. Always preselect best match.
         * update_meal_draft -- After confirmation or via DIRECT PATH.
-
-        === HANDLING "[needs search]" ===
-        When "[Confirmed food selections]" contains items tagged "[needs search]":
-          Format:  - Label: "user text" (Xg) [needs search]
-          Search the quoted text VERBATIM. Do NOT generalise to a generic term.
-          After searching all [needs search] items, call suggest_food for those items only.
-          Items that already have a food_id are resolved -- include them unchanged in update_meal_draft.
 
         === PREVIOUSLY CONSUMED FOODS ===
         The foods below were recently eaten by this user. Their food_ids are valid.
@@ -258,7 +166,7 @@ public class MealAgent : IMealAgent
                             query: args.Query,
                             userId: session.UserId,
                             page: 1,
-                            pageSize: 7,
+                            pageSize: 50,
                             sortBy: FoodSortBy.Name,
                             sortDirection: SortDirection.Ascending);
                     }
