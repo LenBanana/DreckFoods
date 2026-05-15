@@ -18,7 +18,7 @@ namespace FoodDbAPI.Services.AI.Agent;
 /// </summary>
 public class MealAgent : IMealAgent
 {
-    private const int MaxIterations = 15;
+    private const int MaxIterations = 20;
 
     /// <summary>
     /// Base system prompt. {PAST_FOODS} is replaced at runtime with the user's
@@ -48,38 +48,49 @@ public class MealAgent : IMealAgent
         Never search the same ingredient more than twice. Never call search_food after suggest_food.
         EXCEPTION: When processing [needs search] items, use the user's quoted text verbatim (see HANDLING section below). The generic-name rule does NOT apply there.
 
-        â•â•â• WORKFLOW â•â•â•
-        1.  Parse every food item and its quantity from the user's message.
-        2.  If any quantity is missing â†’ call ask_questions first (before searching).
-        3.  Call search_food for each ingredient (generic terms, one call per ingredient).
-        4.  Call suggest_food with ALL ingredients grouped together (one call, not per-ingredient).
-        5.  After the user responds with "[Confirmed food selections]" â†’ call update_meal_draft
-            with the listed food_ids and weights immediately. Do not search again.
-        6.  After the user responds with "[Answers to questions]" â†’ apply the quantities,
-            proceed from step 3.
+        === WORKFLOW ===
+        1. Parse every food item and its quantity from the user's message.
+        2. If any quantity is unknown -> call ask_questions FIRST (before any search).
+        3. For each ingredient: run the search loop (generic term first, up to 3 attempts).
+           Skip search if the ingredient is already in the previously-eaten list below.
+        4. Choose the next step based on confidence:
+             ALL CERTAIN -> call update_meal_draft directly, then confirm in text.
+             ANY AMBIGUOUS (default) -> call suggest_food ONCE with ALL ingredients grouped.
+               Set preselected_food_id for every ingredient where you found a clear best match.
+               Do NOT write any text before or after calling suggest_food.
+        5. After user sends "[Confirmed food selections]" -> call update_meal_draft immediately.
+           After user sends "[Answers to questions]"      -> apply quantities, then go to step 3.
 
-        â•â•â• TOOLS â•â•â•
-        â€¢ ask_questions  â€“ Use BEFORE searching for missing quantities. Provide 4-6 sensible choices
-                           with gram equivalents (e.g. "1 EL (15g)", "1 Tasse (240ml)").
-        â€¢ search_food    â€“ One generic search per ingredient.
-        â€¢ suggest_food   â€“ Show ALL ingredients with candidates at once. Call once, after all searches.
-                           Do NOT write any text message before or after calling suggest_food.
-        â€¢ update_meal_draft â€“ Call immediately after receiving "[Confirmed food selections]".
-                              Include ALL items, not just new ones.
+        === PRESELECTION ===
+        When calling suggest_food, ALWAYS set preselected_food_id to your best candidate for each ingredient.
+        The UI pre-selects that card so the user only needs to review and confirm, not manually choose.
+        Confidence signals:
+          * previously_eaten = true            -> highest confidence, always preselect
+          * Result name closely matches food   -> preselect with high confidence
+          * Multiple plausible options         -> still preselect the most likely; include 3+ candidates
+
+        === DIRECT PATH ===
+        Skip suggest_food entirely when you are confident about EVERY ingredient:
+          - All items match the previously-eaten list, OR
+          - Each ingredient returned exactly one result whose name clearly matches.
+        Call update_meal_draft directly, then write a short confirmation message.
+        When in doubt about ANY item, use the SUGGESTION PATH instead.
+
+        === TOOLS ===
+        * ask_questions     -- Missing quantities only. Call BEFORE any search.
+        * search_food       -- Generic term first, up to 3 attempts per ingredient. Stop when satisfied.
+        * suggest_food      -- Present ALL ingredients at once. ALWAYS set preselected_food_id.
+                               Call ONCE, after all searches. No text before or after.
+        * update_meal_draft -- After "[Confirmed food selections]" OR directly (DIRECT PATH only).
 
         HANDLING "[needs search]"
-        When the user's "[Confirmed food selections]" contains an item tagged "[needs search]",
-        the item format is:  - Label: "user text" (Xg) [needs search]
-        The text in quotes is what the user typed. Use it VERBATIM as the search query.
-        Do NOT generalise to a generic ingredient name - the user chose specific text because
-        the generic search already failed them. Examples:
-          "basmati reis uncle bens" (125g) [needs search]  -> search query = "basmati reis uncle bens"
-          "champignons frisch" (150g) [needs search]       -> search query = "champignons frisch"
-          "kikoman sojasauce" (5g) [needs search]          -> search query = "kikoman sojasauce"
-        After searching all "[needs search]" items, call suggest_food for those items only.
-        Items that already have a food_id are resolved - include them in update_meal_draft as-is.
+        When "[Confirmed food selections]" contains items tagged "[needs search]":
+          Format:  - Label: "user text" (Xg) [needs search]
+          Use the quoted text VERBATIM as the search query. Do NOT generalise.
+          After searching all "[needs search]" items, call suggest_food for those items only.
+          Items with a food_id are resolved -- include them unchanged in update_meal_draft.
 
-        â•â•â• PREVIOUSLY CONSUMED FOODS â•â•â•
+        === PREVIOUSLY CONSUMED FOODS ===
         The foods below were recently eaten by this user. Their food_ids are valid.
         You MAY include them directly as candidates in suggest_food without calling search_food first.
         Prefer these when the user's description matches.
@@ -268,7 +279,8 @@ public class MealAgent : IMealAgent
                             IngredientLabel = suggestion.IngredientLabel,
                             QuantityGrams = suggestion.QuantityGrams,
                             Candidates = candidates,
-                            AllowCustom = suggestion.AllowCustom ?? true
+                            AllowCustom = suggestion.AllowCustom ?? true,
+                            PreselectedFoodId = suggestion.PreselectedFoodId
                         });
                     }
 
@@ -417,6 +429,9 @@ public class MealAgent : IMealAgent
 
         [JsonPropertyName("candidate_food_ids")]
         public List<int> CandidateFoodIds { get; set; } = [];
+
+        [JsonPropertyName("preselected_food_id")]
+        public int? PreselectedFoodId { get; set; }
 
         [JsonPropertyName("allow_custom")]
         public bool? AllowCustom { get; set; }

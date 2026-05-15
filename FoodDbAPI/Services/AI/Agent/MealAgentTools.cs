@@ -34,7 +34,8 @@ public static class MealAgentTools
         Name = "suggest_food",
         Description = "Present the best food candidates for ALL ingredients at once via a structured selection UI. " +
                       "Call this ONCE after all search_food calls are done. Do NOT write any text before or after this call. " +
-                      "The user selects one option per ingredient in the UI and submits — do not call search_food again after this.",
+                      "Always set preselected_food_id to your best candidate for each ingredient. " +
+                      "The user reviews pre-selections and confirms — do not call search_food again after this.",
         ParametersJsonSchema = JsonDocument.Parse("""
             {
               "type": "object",
@@ -57,6 +58,10 @@ public static class MealAgentTools
                         "type": "array",
                         "description": "2-4 food IDs from search_food results or the previously-eaten list, best match first.",
                         "items": { "type": "integer" }
+                      },
+                      "preselected_food_id": {
+                        "type": "integer",
+                        "description": "The food ID you consider the best match. The UI pre-selects this so the user only needs to review. Always provide this when you have a clear best candidate."
                       },
                       "allow_custom": {
                         "type": "boolean",

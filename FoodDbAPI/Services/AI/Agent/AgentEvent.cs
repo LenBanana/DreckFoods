@@ -51,6 +51,13 @@ public class FoodSuggestionGroup
     public double QuantityGrams { get; init; }
     public List<FoodSearchDto> Candidates { get; init; } = [];
     public bool AllowCustom { get; init; } = true;
+
+    /// <summary>
+    /// The food ID the agent considers the best match for this ingredient.
+    /// The frontend pre-selects this candidate so the user only needs to review, not choose.
+    /// Null when the agent cannot determine a confident best match.
+    /// </summary>
+    public int? PreselectedFoodId { get; init; }
 }
 
 // ── Supporting types for AgentAskQuestions ───────────────────────────────────
