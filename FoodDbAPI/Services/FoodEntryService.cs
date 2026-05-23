@@ -44,6 +44,8 @@ public class FoodEntryService(
         var food = await GetFoodWithNutritionAsync(entry.FddbFoodId);
 
         UpdateFoodEntryFromFood(entry, food, request.GramsConsumed);
+        if (request.ConsumedAt.HasValue)
+            entry.ConsumedAt = DateTime.SpecifyKind(request.ConsumedAt.Value, DateTimeKind.Utc);
         entry.CreatedAt = DateTime.UtcNow;
 
         context.FoodEntries.Update(entry);

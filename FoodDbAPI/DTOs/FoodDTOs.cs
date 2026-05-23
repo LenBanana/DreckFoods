@@ -56,6 +56,9 @@ public class EditFoodEntryRequest
     [Required] public int FddbFoodId { get; set; }
 
     [Required] [Range(0.1, 10000)] public double GramsConsumed { get; set; }
+
+    /// <summary>UTC timestamp. When provided, updates the entry's consumed-at time.</summary>
+    public DateTime? ConsumedAt { get; set; }
 }
 
 public class FoodSearchDto
