@@ -59,8 +59,8 @@ public class FoodService(
     }
 
     // Delegating to TimelineService
-    public Task<List<DailyTimelineDto>> GetTimelineAsync(int userId, DateTime startDate, DateTime endDate)
+    public Task<List<DailyTimelineDto>> GetTimelineAsync(int userId, DateTime startDate, DateTime endDate, int tzOffsetMinutes = 0)
     {
-        return timelineService.GetTimelineAsync(userId, startDate, endDate);
+        return timelineService.GetTimelineAsync(userId, startDate, endDate, tzOffsetMinutes);
     }
 }

@@ -11,7 +11,7 @@ public class TimelineService(
 {
     private readonly ILogger<TimelineService> _logger = logger;
 
-    public async Task<List<DailyTimelineDto>> GetTimelineAsync(int userId, DateTime startDate, DateTime endDate)
+    public async Task<List<DailyTimelineDto>> GetTimelineAsync(int userId, DateTime startDate, DateTime endDate, int tzOffsetMinutes = 0)
     {
         var foodEntries = await context.FoodEntries
             .Where(f => f.UserId == userId &&
@@ -27,16 +27,17 @@ public class TimelineService(
             .ToListAsync();
 
         var timeline = new List<DailyTimelineDto>();
-        var currentDate = endDate.Date;
+        // Convert UTC dates to local calendar dates using the client's timezone offset
+        var currentDate = endDate.AddMinutes(tzOffsetMinutes).Date;
 
-        while (currentDate >= startDate.Date)
+        while (currentDate >= startDate.AddMinutes(tzOffsetMinutes).Date)
         {
             var dayFoodEntries = foodEntries
-                .Where(f => f.ConsumedAt.Date == currentDate)
+                .Where(f => f.ConsumedAt.AddMinutes(tzOffsetMinutes).Date == currentDate)
                 .ToList();
 
             var dayWeightEntry = weightEntries
-                .FirstOrDefault(w => w.RecordedAt.Date == currentDate);
+                .FirstOrDefault(w => w.RecordedAt.AddMinutes(tzOffsetMinutes).Date == currentDate);
 
             var dailyData = new DailyTimelineDto
             {

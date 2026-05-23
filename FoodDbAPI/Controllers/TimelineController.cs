@@ -15,7 +15,8 @@ public class TimelineController(IFoodService foodService, ILogger<TimelineContro
     [HttpGet]
     public async Task<ActionResult<TimelineResponse>> GetTimeline(
         [FromQuery] DateTime startDate,
-        [FromQuery] DateTime endDate)
+        [FromQuery] DateTime endDate,
+        [FromQuery] int tzOffsetMinutes = 0)
     {
         try
         {
@@ -30,7 +31,7 @@ public class TimelineController(IFoodService foodService, ILogger<TimelineContro
             }
 
             var userId = User.GetUserId();
-            var timeline = await foodService.GetTimelineAsync(userId, startDate, endDate);
+            var timeline = await foodService.GetTimelineAsync(userId, startDate, endDate, tzOffsetMinutes);
 
             var response = new TimelineResponse
             {

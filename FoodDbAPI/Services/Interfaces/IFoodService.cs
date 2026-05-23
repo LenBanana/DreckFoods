@@ -19,6 +19,6 @@ public interface IFoodService
     Task<FoodEntryDto> EditFoodEntryAsync(int userId, EditFoodEntryRequest request);
     Task<List<FoodEntryDto>> GetFoodEntriesAsync(int userId, DateTime? date = null);
     Task DeleteFoodEntryAsync(int userId, int entryId);
-    Task<List<DailyTimelineDto>> GetTimelineAsync(int userId, DateTime startDate, DateTime endDate);
+    Task<List<DailyTimelineDto>> GetTimelineAsync(int userId, DateTime startDate, DateTime endDate, int tzOffsetMinutes = 0);
     Task<FoodSearchResponse> GetPastEatenFoodsAsync(int userId,int page = 1, int pageSize = 20);
 }
