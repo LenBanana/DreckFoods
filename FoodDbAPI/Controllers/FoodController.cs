@@ -127,12 +127,12 @@ public class FoodController(IFoodService foodService, ILogger<FoodController> lo
     }
 
     [HttpGet("entries")]
-    public async Task<ActionResult<List<FoodEntryDto>>> GetFoodEntries([FromQuery] DateTime? date = null)
+    public async Task<ActionResult<List<FoodEntryDto>>> GetFoodEntries([FromQuery] DateTime? date = null, [FromQuery] int tzOffsetMinutes = 0)
     {
         try
         {
             var userId = User.GetUserId();
-            var entries = await foodService.GetFoodEntriesAsync(userId, date);
+            var entries = await foodService.GetFoodEntriesAsync(userId, date, tzOffsetMinutes);
             return Ok(entries);
         }
         catch (UnauthorizedAccessException ex)

@@ -48,9 +48,9 @@ public class FoodService(
         return foodEntryService.EditFoodEntryAsync(userId, request);
     }
 
-    public Task<List<FoodEntryDto>> GetFoodEntriesAsync(int userId, DateTime? date = null)
+    public Task<List<FoodEntryDto>> GetFoodEntriesAsync(int userId, DateTime? date = null, int tzOffsetMinutes = 0)
     {
-        return foodEntryService.GetFoodEntriesAsync(userId, date);
+        return foodEntryService.GetFoodEntriesAsync(userId, date, tzOffsetMinutes);
     }
 
     public Task DeleteFoodEntryAsync(int userId, int entryId)

@@ -57,15 +57,17 @@ public class FoodEntryService(
         return FoodEntryDto.MapToFoodEntryDto(entry);
     }
 
-    public async Task<List<FoodEntryDto>> GetFoodEntriesAsync(int userId, DateTime? date = null)
+    public async Task<List<FoodEntryDto>> GetFoodEntriesAsync(int userId, DateTime? date = null, int tzOffsetMinutes = 0)
     {
         var query = context.FoodEntries.Where(f => f.UserId == userId);
 
         if (date.HasValue)
         {
-            var startOfDay = date.Value.Date;
-            var endOfDay = startOfDay.AddDays(1);
-            query = query.Where(f => f.ConsumedAt >= startOfDay && f.ConsumedAt < endOfDay);
+            // Shift to local-day boundaries in UTC so entries logged in the early hours
+            // of the local calendar day (which fall on the previous UTC date) are included.
+            var startOfLocalDay = date.Value.Date.AddMinutes(-tzOffsetMinutes);
+            var endOfLocalDay = startOfLocalDay.AddDays(1);
+            query = query.Where(f => f.ConsumedAt >= startOfLocalDay && f.ConsumedAt < endOfLocalDay);
         }
 
         var entries = await query
