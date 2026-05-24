@@ -30,6 +30,15 @@ public class FoodDbContext(DbContextOptions<FoodDbContext> options) : DbContext(
             c => c.Aggregate(0, (a, v) => HashCode.Combine(a, v.GetHashCode())),
             c => c.ToList());
 
+        var servingListConverter = new ValueConverter<List<ServingInfo>, string>(
+            v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+            v => JsonSerializer.Deserialize<List<ServingInfo>>(v, (JsonSerializerOptions?)null) ?? new List<ServingInfo>());
+
+        var servingListComparer = new ValueComparer<List<ServingInfo>>(
+            (c1, c2) => c1!.SequenceEqual(c2!),
+            c => c.Aggregate(0, (a, v) => HashCode.Combine(a, v.GetHashCode())),
+            c => c.ToList());
+
         // User configuration
         modelBuilder.Entity<User>(entity =>
         {
@@ -86,9 +95,11 @@ public class FoodDbContext(DbContextOptions<FoodDbContext> options) : DbContext(
                 .HasConversion(stringListConverter, stringListComparer)
                 .HasMaxLength(1000);
 
-            // Servings is an in-memory-only property (no DB column exists) — must be ignored
-            // so EF does not discover ServingInfo/NutritionalValue as entity types.
-            entity.Ignore(e => e.Servings);
+            // Servings stored as a JSON column
+            entity.Property(e => e.Servings)
+                .HasColumnName("ServingsJson")
+                .HasConversion(servingListConverter, servingListComparer)
+                .HasMaxLength(4000);
 
             // Configure the one-to-one relationship with nutrition
             entity.HasOne(e => e.Nutrition)

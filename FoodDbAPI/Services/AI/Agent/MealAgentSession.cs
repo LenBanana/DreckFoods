@@ -11,6 +11,12 @@ public class MealAgentSession
     public List<MealDraftItem> MealDraft { get; set; } = new();
 
     /// <summary>
+    /// "log"  — logging what the user ate (default).
+    /// "plan" — building a recipe/meal template without immediate logging.
+    /// </summary>
+    public string Mode { get; init; } = "log";
+
+    /// <summary>
     /// Food lookup cache populated by search_food and used by suggest_food + update_meal_draft
     /// to avoid redundant DB round-trips within the same session.
     /// </summary>

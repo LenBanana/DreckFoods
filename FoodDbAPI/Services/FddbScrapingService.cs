@@ -222,107 +222,48 @@ public class FddbScrapingService(
         };
     }
 
+    // Matches link text like "Portion (150 g)", "Stück (100 g)", "100 g (100 g)", "Packung (200 g)"
+    private static readonly Regex ServingLinkRegex = new(
+        @"^(.+?)\s*\((\d+(?:[,\.]\d+)?)\s*g\)\s*$",
+        RegexOptions.Compiled);
+
+    // Matches generic weight-only names like "100 g", "250 g"
+    private static readonly Regex PlainWeightNameRegex = new(
+        @"^\d+(?:[,\.]\d+)?\s*g$",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
     private static List<ServingInfo> ExtractServingInfo(HtmlDocument doc)
     {
-        var servings = new List<ServingInfo>();
-        var servingNodes = doc.DocumentNode.SelectNodes("//div[@class='serva']");
+        var linkNodes = doc.DocumentNode.SelectNodes("//div[@class='serva']//a[@class='servb']");
+        if (linkNodes == null) return [];
 
-        if (servingNodes == null) return servings;
+        // Key by weight; prefer named entries (e.g. "Portion") over generic "100 g"
+        var seen = new Dictionary<double, ServingInfo>();
 
-        foreach (var servingNode in servingNodes)
+        foreach (var node in linkNodes)
         {
-            try
-            {
-                // Extract serving name and unit from the title attribute of the link
-                var titleNode = servingNode.SelectSingleNode(".//a[@class='servb']");
-                var title = titleNode?.GetAttributeValue("title", string.Empty) ?? string.Empty;
+            var linkText = node.InnerText.Trim();
+            var match = ServingLinkRegex.Match(linkText);
+            if (!match.Success) continue;
 
-                // Extract serving amount and unit from the link text (e.g., "100 g (100 ml)" or "Glas (250 ml)")
-                var linkText = titleNode?.InnerText?.Trim() ?? string.Empty;
-
-                // Find the calories and kilojoules from the "less" div (e.g., "Brennwert: 8 kJ, Kalorien: 2 kcal")
-                var nutritionText =
-                    servingNode.SelectSingleNode(".//div[starts-with(@id, 'less')]//p")?.InnerText?.Trim() ??
-                    string.Empty;
-
-                var serving = ParseServingData(title, linkText, nutritionText);
-                if (serving != null)
-                {
-                    servings.Add(serving);
-                }
-            }
-            catch
-            {
-                // Skip malformed serving entries
+            var name = match.Groups[1].Value.Trim();
+            var weightStr = match.Groups[2].Value.Replace(",", ".");
+            if (!double.TryParse(weightStr, System.Globalization.NumberStyles.Any,
+                    System.Globalization.CultureInfo.InvariantCulture, out var weight) || weight <= 0)
                 continue;
-            }
-        }
 
-        return servings;
-    }
-
-    private static ServingInfo? ParseServingData(string title, string linkText, string nutritionText)
-    {
-        if (string.IsNullOrWhiteSpace(linkText) || string.IsNullOrWhiteSpace(nutritionText))
-            return null;
-
-        // Extract serving name from title (e.g., "100 g Monster Energy Ultra..." -> "Monster Energy Ultra...")
-        var servingName = title.Split(' ').Skip(2).FirstOrDefault() ?? "Unknown";
-        if (title.Contains("Monster Energy") || title.Contains("Glas") || title.Contains("Dose"))
-        {
-            if (title.StartsWith("100 g "))
-                servingName = "100g Standard";
-            else if (title.Contains("Glas"))
-                servingName = "Glas";
-            else if (title.Contains("Dose"))
-                servingName = "Dose";
-        }
-
-        // Parse amount and unit from link text
-        var amount = 0.0;
-        var unit = "";
-
-        // Match patterns like "100 g (100 ml)", "Glas (250 ml)", "Dose (500 ml)"
-        var match = Regex.Match(linkText,
-            @"(?:(\d+(?:,\d+)?)\s*([a-zA-Z]+)|\w+)\s*\((\d+(?:,\d+)?)\s*([a-zA-Z]+)\)");
-        if (match.Success)
-        {
-            var amountStr = match.Groups[3].Value.Replace(",", ".");
-            if (double.TryParse(amountStr, System.Globalization.NumberStyles.Any,
-                    System.Globalization.CultureInfo.InvariantCulture, out amount))
+            if (!seen.TryGetValue(weight, out var existing))
             {
-                unit = match.Groups[4].Value;
+                seen[weight] = new ServingInfo { Name = name, WeightGrams = weight };
+            }
+            else if (PlainWeightNameRegex.IsMatch(existing.Name) && !PlainWeightNameRegex.IsMatch(name))
+            {
+                // Replace the generic "100 g" label with a more descriptive name
+                seen[weight] = new ServingInfo { Name = name, WeightGrams = weight };
             }
         }
 
-        // Parse nutrition values (e.g., "Brennwert: 8 kJ, Kalorien: 2 kcal")
-        var kilojoules = new NutritionalValue { Value = 0, Unit = "kJ" };
-        var calories = new NutritionalValue { Value = 0, Unit = "kcal" };
-
-        var kjMatch = Regex.Match(nutritionText, @"Brennwert:\s*(\d+(?:,\d+)?)\s*kJ");
-        if (kjMatch.Success && double.TryParse(kjMatch.Groups[1].Value.Replace(",", "."),
-                System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture,
-                out var kjValue))
-        {
-            kilojoules.Value = kjValue;
-        }
-
-        var kcalMatch = Regex.Match(nutritionText, @"Kalorien:\s*(\d+(?:,\d+)?)\s*kcal");
-        if (kcalMatch.Success && double.TryParse(kcalMatch.Groups[1].Value.Replace(",", "."),
-                System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture,
-                out var kcalValue))
-        {
-            calories.Value = kcalValue;
-        }
-
-        return new ServingInfo
-        {
-            Name = servingName,
-            Amount = amount,
-            Unit = unit,
-            Kilojoules = kilojoules,
-            Calories = calories
-        };
+        return [.. seen.Values.OrderBy(s => s.WeightGrams)];
     }
 
 

@@ -25,11 +25,11 @@ public sealed class InMemoryMealSessionStore : BackgroundService, IMealSessionSt
 
     // ── IMealSessionStore ─────────────────────────────────────────────────────
 
-    public MealAgentSession CreateSession(int userId)
+    public MealAgentSession CreateSession(int userId, string mode = "log")
     {
-        var session = new MealAgentSession { UserId = userId };
+        var session = new MealAgentSession { UserId = userId, Mode = mode };
         _sessions[session.SessionId] = session;
-        _logger.LogDebug("Created session {SessionId} for user {UserId}", session.SessionId, userId);
+        _logger.LogDebug("Created session {SessionId} for user {UserId} (mode={Mode})", session.SessionId, userId, mode);
         return session;
     }
 

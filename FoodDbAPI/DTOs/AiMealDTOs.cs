@@ -3,6 +3,15 @@ using FoodDbAPI.Models.Fddb;
 
 namespace FoodDbAPI.DTOs;
 
+public class StartSessionRequestDto
+{
+    /// <summary>
+    /// "log"  — user describes what they ate; agent logs it (default).
+    /// "plan" — user wants to build a recipe/meal composition to save as a template.
+    /// </summary>
+    public string Mode { get; set; } = "log";
+}
+
 public class StartSessionResponseDto
 {
     public string SessionId { get; set; } = string.Empty;
@@ -35,6 +44,13 @@ public class ConfirmMealRequestDto
     public string Name { get; set; } = string.Empty;
 
     public bool SaveAsMeal { get; set; } = true;
+
+    /// <summary>
+    /// When false, saves only as a meal template without logging any food entries.
+    /// Implies SaveAsMeal = true; ConsumedAt is ignored.
+    /// Defaults to true for backwards compatibility.
+    /// </summary>
+    public bool LogNow { get; set; } = true;
 
     /// <summary>UTC timestamp; if null the backend uses DateTime.UtcNow.</summary>
     public DateTime? ConsumedAt { get; set; }

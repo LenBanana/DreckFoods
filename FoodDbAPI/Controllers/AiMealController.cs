@@ -29,9 +29,14 @@ public class AiMealController(
     // ── Session management ────────────────────────────────────────────────────
 
     [HttpPost("session")]
-    public IActionResult CreateSession()
+    public IActionResult CreateSession([FromBody] StartSessionRequestDto? request)
     {
-        var session = sessionStore.CreateSession(User.GetUserId());
+        var mode = request?.Mode?.ToLowerInvariant() switch
+        {
+            "plan" => "plan",
+            _      => "log"   // default / unknown values fall back to log
+        };
+        var session = sessionStore.CreateSession(User.GetUserId(), mode);
         return Ok(new StartSessionResponseDto { SessionId = session.SessionId.ToString() });
     }
 
@@ -132,6 +137,22 @@ public class AiMealController(
         var consumedAt = request.ConsumedAt ?? DateTime.UtcNow;
         var response   = new ConfirmMealResponseDto();
 
+        // ── Plan mode: save as meal template only, no logging ─────────────────
+        if (!request.LogNow)
+        {
+            var createDto = new CreateMealDto
+            {
+                Name  = request.Name,
+                Items = session.MealDraft
+                    .Select(i => new MealItemDto { FddbFoodId = i.FddbFoodId, Weight = i.WeightGrams })
+                    .ToList()
+            };
+            response.Meal = await mealService.CreateMealAsync(userId, createDto);
+            sessionStore.DeleteSession(id);
+            return Ok(response);
+        }
+
+        // ── Log mode: log entries (optionally also create meal template) ──────
         if (request.SaveAsMeal)
         {
             // Create a reusable meal template from the draft items.

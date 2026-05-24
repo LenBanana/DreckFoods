@@ -21,10 +21,10 @@ public class MealAgent : IMealAgent
     private const int MaxIterations = 30;
 
     /// <summary>
-    /// System prompt injected at the start of every turn.
+    /// System prompt for "log" mode — injected at the start of every turn.
     /// {PAST_FOODS} is replaced at runtime with the user's recent food history.
     /// </summary>
-    private const string SystemPromptTemplate =
+    private const string LogModeSystemPromptTemplate =
         """
         You are a meal logging assistant for a nutrition tracking app.
         Your single goal: log the user's meal as accurately as possible.
@@ -43,6 +43,47 @@ public class MealAgent : IMealAgent
         The foods below were recently eaten by this user. Their food_ids are valid.
         You MAY include them as candidates in suggest_food or use them in the DIRECT PATH without searching.
         Prefer these when the user's description matches.
+
+        {PAST_FOODS}
+        """;
+
+    /// <summary>
+    /// System prompt for "plan" mode — the agent acts as a recipe builder / meal planner.
+    /// The draft is saved as a reusable meal template; nothing is logged immediately.
+    /// {PAST_FOODS} is replaced at runtime with the user's known foods.
+    /// </summary>
+    private const string PlanModeSystemPromptTemplate =
+        """
+        You are a meal planning and recipe assistant for a nutrition tracking app.
+        Your role is to help users explore meal ideas, suggest complete recipes, and build a full ingredient list that will be saved as a reusable meal template — NOT logged immediately.
+
+        When the user asks for meal ideas or describes a dish they want to make:
+        1. Be proactive: suggest a complete, balanced set of ingredients with realistic quantities.
+        2. Ask clarifying questions only when the serving size or a key ingredient is genuinely unclear.
+        3. Search the database for every ingredient using generic names (no brands).
+        4. Present all candidates at once via suggest_food — always preselect your best match so the user only needs to review.
+        5. After the user confirms, update the recipe draft. You may follow up to refine the recipe or add sides.
+
+        The final draft is saved as a reusable recipe. The user will log individual portions of it later — you do NOT need to ask when it was consumed.
+
+        Be flexible and creative. The user may:
+        - Ask for a specific dish ("Help me build a chili recipe")
+        - Ask for inspiration ("What's a good high-protein lunch?")
+        - Describe a meal they plan to cook ("I want to make pasta bolognese for 2")
+        - Want to save a recipe they already know by heart
+
+        For serving size: assume one person unless stated otherwise. Use standard cooking quantities.
+        Always think about balance: protein, carbohydrates, fat, and vegetables.
+
+        === TOOLS ===
+        * ask_questions     -- Ask about serving count, missing ingredients, or dietary preferences. Set recommended:true on your best guess.
+        * search_food       -- Generic ingredient name (e.g. "Hähnchenbrust", "Dosen Tomaten"). Refine until satisfied.
+        * suggest_food      -- All ingredients at once. Per-ingredient quantities. Always preselect your best match.
+        * update_meal_draft -- After the user confirms selections.
+
+        === KNOWN FOODS FOR THIS USER ===
+        The foods below have been consumed or saved by this user. Their food_ids are valid.
+        Prefer these as candidates in suggest_food when relevant.
 
         {PAST_FOODS}
         """;
@@ -77,7 +118,7 @@ public class MealAgent : IMealAgent
         session.Messages.Add(AIMessage.User(userMessage));
 
         // Build system prompt once per turn (contains fresh past-foods context).
-        var systemPrompt = await BuildSystemPromptAsync(session.UserId, cancellationToken);
+        var systemPrompt = await BuildSystemPromptAsync(session.UserId, session.Mode, cancellationToken);
 
         var messages = new List<AIMessage>(session.Messages.Count + 1)
         {
@@ -319,8 +360,9 @@ public class MealAgent : IMealAgent
 
     // -- Dynamic system prompt ---------------------------------------------------
 
-    private async Task<string> BuildSystemPromptAsync(int userId, CancellationToken ct)
+    private async Task<string> BuildSystemPromptAsync(int userId, string mode, CancellationToken ct)
     {
+        var template = mode == "plan" ? PlanModeSystemPromptTemplate : LogModeSystemPromptTemplate;
         string pastFoodsSection;
 
         try
@@ -349,7 +391,7 @@ public class MealAgent : IMealAgent
             pastFoodsSection = "(History unavailable -- use search_food as usual.)";
         }
 
-        return SystemPromptTemplate.Replace("{PAST_FOODS}", pastFoodsSection);
+        return template.Replace("{PAST_FOODS}", pastFoodsSection);
     }
 
     // -- Private DTO types for tool argument deserialisation ---------------------
