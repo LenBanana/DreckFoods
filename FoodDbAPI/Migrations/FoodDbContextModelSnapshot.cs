@@ -82,6 +82,13 @@ namespace FoodDbAPI.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("CaffeineUnit")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<double>("CaffeineValue")
+                        .HasColumnType("double precision");
+
                     b.Property<string>("CalciumUnit")
                         .IsRequired()
                         .HasColumnType("text");
@@ -252,6 +259,9 @@ namespace FoodDbAPI.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<double>("Caffeine")
+                        .HasColumnType("double precision");
+
                     b.Property<double>("Calories")
                         .HasColumnType("double precision");
 
@@ -290,6 +300,9 @@ namespace FoodDbAPI.Migrations
                     b.Property<double>("Protein")
                         .HasColumnType("double precision");
 
+                    b.Property<double>("Salt")
+                        .HasColumnType("double precision");
+
                     b.Property<double>("Sugar")
                         .HasColumnType("double precision");
 
@@ -317,8 +330,7 @@ namespace FoodDbAPI.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Description")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
+                        .HasColumnType("text");
 
                     b.Property<string>("Name")
                         .IsRequired()

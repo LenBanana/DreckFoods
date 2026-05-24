@@ -1,7 +1,10 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace FoodDbAPI.DTOs;
 
 public class CreateMealDto
 {
+    [MaxLength(200)]
     public required string Name { get; set; }
     public string? Description { get; set; }
     public required List<MealItemDto> Items { get; set; }
@@ -15,6 +18,7 @@ public class MealItemDto
 
 public class UpdateMealDto
 {
+    [MaxLength(200)]
     public string? Name { get; set; }
     public string? Description { get; set; }
     public List<MealItemDto>? Items { get; set; }

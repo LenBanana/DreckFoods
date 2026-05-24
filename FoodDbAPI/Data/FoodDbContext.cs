@@ -109,7 +109,6 @@ public class FoodDbContext(DbContextOptions<FoodDbContext> options) : DbContext(
         {
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Name).HasMaxLength(200);
-            entity.Property(e => e.Description).HasMaxLength(1000);
             
             entity.HasOne(e => e.User)
                 .WithMany()
