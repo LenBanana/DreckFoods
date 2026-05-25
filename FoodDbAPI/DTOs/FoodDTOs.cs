@@ -10,10 +10,12 @@ namespace FoodDbAPI.DTOs;
 public class FoodEntryDto : NutritionBase
 {
     public int Id { get; set; }
+    public int FddbFoodId { get; set; }
     public string FoodName { get; set; } = string.Empty;
     public string? FoodUrl { get; set; }
     public string? Brand { get; set; }
     public string? ImageUrl { get; set; }
+    public string? ServingName { get; set; }
     public double GramsConsumed { get; set; }
     public DateTime ConsumedAt { get; set; }
     public DateTime CreatedAt { get; set; }
@@ -23,10 +25,12 @@ public class FoodEntryDto : NutritionBase
         return new FoodEntryDto
         {
             Id = entry.Id,
+            FddbFoodId = entry.FddbFoodId,
             FoodName = WebUtility.HtmlDecode(entry.FoodName),
             FoodUrl = entry.FoodUrl,
             Brand = entry.Brand,
             ImageUrl = entry.ImageUrl,
+            ServingName = entry.ServingName,
             GramsConsumed = entry.GramsConsumed,
             Calories = entry.Calories,
             Protein = entry.Protein,
@@ -48,6 +52,8 @@ public class CreateFoodEntryRequest
 
     [Required] [Range(0.1, 10000)] public double GramsConsumed { get; set; }
 
+    [MaxLength(200)] public string? ServingName { get; set; }
+
     [Required] public DateTime ConsumedAt { get; set; }
 }
 
@@ -56,6 +62,8 @@ public class EditFoodEntryRequest
     [Required] public int FddbFoodId { get; set; }
 
     [Required] [Range(0.1, 10000)] public double GramsConsumed { get; set; }
+
+    [MaxLength(200)] public string? ServingName { get; set; }
 
     /// <summary>UTC timestamp. When provided, updates the entry's consumed-at time.</summary>
     public DateTime? ConsumedAt { get; set; }
@@ -127,10 +135,12 @@ public class FoodSearchDto
 public class FoodEntryResponseDto : NutritionBase
 {
     public int Id { get; set; }
+    public int FddbFoodId { get; set; }
     public string FoodName { get; set; } = string.Empty;
     public string? FoodUrl { get; set; }
     public string? Brand { get; set; }
     public string? ImageUrl { get; set; }
+    public string? ServingName { get; set; }
     public double GramsConsumed { get; set; }
     public DateTime ConsumedAt { get; set; }
     public DateTime CreatedAt { get; set; }

@@ -16,6 +16,7 @@ public class FoodDbContext(DbContextOptions<FoodDbContext> options) : DbContext(
     public DbSet<FddbFoodNutrition> FddbFoodNutritions { get; set; }
     public DbSet<Meal> Meals { get; set; }
     public DbSet<MealItem> MealItems { get; set; }
+    public DbSet<MealPortionLog> MealPortionLogs { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -23,7 +24,7 @@ public class FoodDbContext(DbContextOptions<FoodDbContext> options) : DbContext(
         
         var stringListConverter = new ValueConverter<List<string>, string>(
             v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
-            v => JsonSerializer.Deserialize<List<string>>(v, (JsonSerializerOptions?)null) ?? new List<string>());
+            v => DeserializeJsonListOrEmpty<string>(v));
         
         var stringListComparer = new ValueComparer<List<string>>(
             (c1, c2) => c1!.SequenceEqual(c2!),
@@ -32,7 +33,7 @@ public class FoodDbContext(DbContextOptions<FoodDbContext> options) : DbContext(
 
         var servingListConverter = new ValueConverter<List<ServingInfo>, string>(
             v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
-            v => JsonSerializer.Deserialize<List<ServingInfo>>(v, (JsonSerializerOptions?)null) ?? new List<ServingInfo>());
+            v => DeserializeJsonListOrEmpty<ServingInfo>(v));
 
         var servingListComparer = new ValueComparer<List<ServingInfo>>(
             (c1, c2) => c1!.SequenceEqual(c2!),
@@ -70,6 +71,7 @@ public class FoodDbContext(DbContextOptions<FoodDbContext> options) : DbContext(
                 .OnDelete(DeleteBehavior.Cascade);
             entity.Property(e => e.FoodName).HasMaxLength(200);
             entity.Property(e => e.Brand).HasMaxLength(100);
+            entity.Property(e => e.ServingName).HasMaxLength(200);
             entity.Property(e => e.ConsumedAt)
                 .HasConversion(
                     v => v,
@@ -156,5 +158,40 @@ public class FoodDbContext(DbContextOptions<FoodDbContext> options) : DbContext(
                 
             entity.HasIndex(e => e.MealId);
         });
+
+                        modelBuilder.Entity<MealPortionLog>(entity =>
+                        {
+                            entity.HasKey(e => e.Id);
+
+                            entity.HasOne(e => e.User)
+                                .WithMany()
+                                .HasForeignKey(e => e.UserId)
+                                .OnDelete(DeleteBehavior.Cascade);
+
+                            entity.HasOne(e => e.Meal)
+                                .WithMany()
+                                .HasForeignKey(e => e.MealId)
+                                .OnDelete(DeleteBehavior.Cascade);
+
+                            entity.Property(e => e.ServingName).HasMaxLength(200);
+                            entity.Property(e => e.ConsumedAt)
+                                .HasConversion(
+                                    v => v,
+                                    v => DateTime.SpecifyKind(v, DateTimeKind.Utc));
+                            entity.Property(e => e.CreatedAt)
+                                .HasConversion(
+                                    v => v,
+                                    v => DateTime.SpecifyKind(v, DateTimeKind.Utc));
+
+                            entity.HasIndex(e => new { e.UserId, e.MealId, e.ConsumedAt });
+                        });
     }
+
+                    private static List<T> DeserializeJsonListOrEmpty<T>(string? value)
+                    {
+                        if (string.IsNullOrWhiteSpace(value))
+                            return [];
+
+                        return JsonSerializer.Deserialize<List<T>>(value, (JsonSerializerOptions?)null) ?? [];
+                    }
 }

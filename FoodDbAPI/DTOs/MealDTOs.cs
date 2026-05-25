@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using FoodDbAPI.Models.Fddb;
 
 namespace FoodDbAPI.DTOs;
 
@@ -30,6 +31,7 @@ public class MealResponseDto
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
     public List<MealItemResponseDto> Items { get; set; } = new();
+    public List<ServingInfo> Servings { get; set; } = new();
     public double TotalWeight { get; set; } // In grams
     public MealNutritionDto Nutrition { get; set; } = new();
     public DateTime CreatedAt { get; set; }
@@ -60,5 +62,6 @@ public class AddMealPortionDto
 {
     public required int MealId { get; set; }
     public required double Weight { get; set; } // In grams
+    [MaxLength(200)] public string? ServingName { get; set; }
     public DateTime? ConsumedAt { get; set; } // If not provided, current time will be used
 }

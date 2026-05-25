@@ -21,6 +21,7 @@ public class FoodEntryService(
         var foodEntry = CreateFoodEntryFromFood(food, request.GramsConsumed);
         foodEntry.UserId = userId;
         foodEntry.FddbFoodId = food.Id;
+        foodEntry.ServingName = NormalizeServingName(request.ServingName);
         foodEntry.ConsumedAt = request.ConsumedAt;
         foodEntry.CreatedAt = DateTime.UtcNow;
 
@@ -33,17 +34,20 @@ public class FoodEntryService(
         return FoodEntryDto.MapToFoodEntryDto(foodEntry);
     }
 
-    public async Task<FoodEntryDto> EditFoodEntryAsync(int userId, EditFoodEntryRequest request)
+    public async Task<FoodEntryDto> EditFoodEntryAsync(int userId, int entryId, EditFoodEntryRequest request)
     {
         var entry = await context.FoodEntries
-            .FirstOrDefaultAsync(f => f.Id == request.FddbFoodId && f.UserId == userId);
+            .FirstOrDefaultAsync(f => f.Id == entryId && f.UserId == userId);
 
         if (entry == null)
             throw new ArgumentException("Food entry not found");
 
-        var food = await GetFoodWithNutritionAsync(entry.FddbFoodId);
+        var food = await GetFoodWithNutritionAsync(request.FddbFoodId);
 
         UpdateFoodEntryFromFood(entry, food, request.GramsConsumed);
+        entry.FddbFoodId = food.Id;
+        if (request.ServingName != null)
+            entry.ServingName = NormalizeServingName(request.ServingName);
         if (request.ConsumedAt.HasValue)
             entry.ConsumedAt = DateTime.SpecifyKind(request.ConsumedAt.Value, DateTimeKind.Utc);
         entry.CreatedAt = DateTime.UtcNow;
@@ -51,8 +55,8 @@ public class FoodEntryService(
         context.FoodEntries.Update(entry);
         await context.SaveChangesAsync();
 
-        logger.LogInformation("Food entry edited for user {UserId}: {FoodName} - {Grams}g",
-            userId, food.Name, request.GramsConsumed);
+        logger.LogInformation("Food entry edited for user {UserId}: entry {EntryId} updated to {FoodName} - {Grams}g",
+            userId, entryId, food.Name, request.GramsConsumed);
 
         return FoodEntryDto.MapToFoodEntryDto(entry);
     }
@@ -136,5 +140,13 @@ public class FoodEntryService(
         
         // Apply the multiplier to all nutritional values at once
         entry.ApplyMultiplier(multiplier);
+    }
+
+    private static string? NormalizeServingName(string? servingName)
+    {
+        if (string.IsNullOrWhiteSpace(servingName))
+            return null;
+
+        return servingName.Trim();
     }
 }

@@ -27,9 +27,9 @@ public class FoodService(
         return foodSearchService.GetFoodCategoriesAsync();
     }
 
-    public Task<FoodSearchDto?> GetFoodByIdAsync(int foodId)
+    public Task<FoodSearchDto?> GetFoodByIdAsync(int foodId, int? userId = null)
     {
-        return foodSearchService.GetFoodByIdAsync(foodId);
+        return foodSearchService.GetFoodByIdAsync(foodId, userId);
     }
 
     public Task<FoodSearchResponse> GetPastEatenFoodsAsync(int userId, int page = 1, int pageSize = 20)
@@ -43,9 +43,9 @@ public class FoodService(
         return foodEntryService.AddFoodEntryAsync(userId, request);
     }
 
-    public Task<FoodEntryDto> EditFoodEntryAsync(int userId, EditFoodEntryRequest request)
+    public Task<FoodEntryDto> EditFoodEntryAsync(int userId, int entryId, EditFoodEntryRequest request)
     {
-        return foodEntryService.EditFoodEntryAsync(userId, request);
+        return foodEntryService.EditFoodEntryAsync(userId, entryId, request);
     }
 
     public Task<List<FoodEntryDto>> GetFoodEntriesAsync(int userId, DateTime? date = null, int tzOffsetMinutes = 0)

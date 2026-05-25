@@ -5,7 +5,7 @@ namespace FoodDbAPI.Services.Interfaces;
 public interface IFoodEntryService
 {
     Task<FoodEntryDto> AddFoodEntryAsync(int userId, CreateFoodEntryRequest request);
-    Task<FoodEntryDto> EditFoodEntryAsync(int userId, EditFoodEntryRequest request);
+    Task<FoodEntryDto> EditFoodEntryAsync(int userId, int entryId, EditFoodEntryRequest request);
     Task<List<FoodEntryDto>> GetFoodEntriesAsync(int userId, DateTime? date = null, int tzOffsetMinutes = 0);
     Task DeleteFoodEntryAsync(int userId, int entryId);
 }

@@ -21,6 +21,7 @@ public class FoodEntry : NutritionBase
     public string? FoodUrl { get; set; }
     public string? Brand { get; set; }
     public string? ImageUrl { get; set; }
+    public string? ServingName { get; set; }
 
     [Required]
     [Range(0.1, 10000)]

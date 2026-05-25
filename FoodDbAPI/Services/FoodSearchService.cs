@@ -1,4 +1,5 @@
 using System.Net;
+using System.Globalization;
 using FoodDbAPI.Data;
 using FoodDbAPI.DTOs;
 using FoodDbAPI.DTOs.Enums;
@@ -16,7 +17,10 @@ public class FoodSearchService(
     IFddbScrapingService scrapingService)
     : IFoodSearchService
 {
+    private const double DuplicateServingToleranceGrams = 0.5;
+    private const double DefaultServingWeightGrams = 100;
     private readonly int _maxSearchResults = configuration.GetValue("MaxSearchResults", 10000);
+    private readonly int _maxServingSuggestions = Math.Clamp(configuration.GetValue("MaxServingSuggestions", 6), 1, 12);
 
     public async Task<FoodSearchResponse> SearchFoodsAsync(
         string query,
@@ -59,8 +63,14 @@ public class FoodSearchService(
                 // Save scraped foods to database for future searches and get the saved entities with IDs
                 var savedFoods = await SaveScrapedFoodsToDatabaseAsync(scrapedFoods);
 
+                var scrapedServingHistory = userId.HasValue
+                    ? await LoadFoodServingHistoryAsync(userId.Value, savedFoods.Select(food => food.Id))
+                    : new Dictionary<int, List<ServingInfo>>();
+
                 // Convert saved foods (with proper IDs) to DTOs
-                var scrapedFoodDtos = savedFoods.Select(FoodSearchDto.MapSavedFoodToDto).ToList();
+                var scrapedFoodDtos = savedFoods
+                    .Select(food => MapFoodToDto(food, false, scrapedServingHistory))
+                    .ToList();
                     
                 // If forceScrape and we have database results, merge the results
                 if (forceScrape && dbResults.Foods.Count > 0)
@@ -195,33 +205,15 @@ public class FoodSearchService(
                     .ToList();
                 
                 // Map both groups to DTOs
-                var previouslyEatenDtos = previouslyEatenFoods.Select(f => new FoodSearchDto
-                {
-                    Id = f.Id,
-                    Name = WebUtility.HtmlDecode(f.Name),
-                    Url = f.Url,
-                    Description = WebUtility.HtmlDecode(f.Description),
-                    ImageUrl = f.ImageUrl,
-                    Brand = f.Brand,
-                    Tags = f.Tags,
-                    Servings = f.Servings,
-                    Nutrition = f.Nutrition.ToNutritionInfo(),
-                    PreviouslyEaten = true
-                }).ToList();
-                
-                var newFoodDtos = newFoods.Select(f => new FoodSearchDto
-                {
-                    Id = f.Id,
-                    Name = WebUtility.HtmlDecode(f.Name),
-                    Url = f.Url,
-                    Description = WebUtility.HtmlDecode(f.Description),
-                    ImageUrl = f.ImageUrl,
-                    Brand = f.Brand,
-                    Tags = f.Tags,
-                    Servings = f.Servings,
-                    Nutrition = f.Nutrition.ToNutritionInfo(),
-                    PreviouslyEaten = false
-                }).ToList();
+                var servingHistory = await LoadFoodServingHistoryAsync(userId.Value, allFoodEntities.Select(f => f.Id));
+
+                var previouslyEatenDtos = previouslyEatenFoods
+                    .Select(f => MapFoodToDto(f, true, servingHistory))
+                    .ToList();
+
+                var newFoodDtos = newFoods
+                    .Select(f => MapFoodToDto(f, false, servingHistory))
+                    .ToList();
                 
                 // Apply the user's sorting preference to each group separately
                 var sortedPreviouslyEaten = FoodSearchDto.ApplySortingToScrapedFoods(
@@ -256,19 +248,13 @@ public class FoodSearchService(
             .Take(pageSize)
             .ToListAsync();
 
-        var foods = foodEntities.Select(f => new FoodSearchDto
-        {
-            Id = f.Id,
-            Name = WebUtility.HtmlDecode(f.Name),
-            Url = f.Url,
-            Description = WebUtility.HtmlDecode(f.Description),
-            ImageUrl = f.ImageUrl,
-            Brand = f.Brand,
-            Tags = f.Tags,
-            Servings = f.Servings,
-            Nutrition = f.Nutrition.ToNutritionInfo(),
-            PreviouslyEaten = previouslyEatenFoodIds.Contains(f.Id)
-        }).ToList();
+        var foodServingHistory = userId.HasValue
+            ? await LoadFoodServingHistoryAsync(userId.Value, foodEntities.Select(f => f.Id))
+            : new Dictionary<int, List<ServingInfo>>();
+
+        var foods = foodEntities
+            .Select(f => MapFoodToDto(f, previouslyEatenFoodIds.Contains(f.Id), foodServingHistory))
+            .ToList();
 
         return new FoodSearchResponse
         {
@@ -357,25 +343,11 @@ public class FoodSearchService(
             .Where(f => recentIds.Contains(f.Id))
             .ToDictionaryAsync(f => f.Id);
 
+        var servingHistory = await LoadFoodServingHistoryAsync(userId, foodMap.Keys);
+
         var distinctFoods = recentIds
             .Where(id => foodMap.ContainsKey(id))
-            .Select(id =>
-            {
-                var f = foodMap[id];
-                return new FoodSearchDto
-                {
-                    Id = f.Id,
-                    Name = System.Net.WebUtility.HtmlDecode(f.Name),
-                    Url = f.Url,
-                    Description = System.Net.WebUtility.HtmlDecode(f.Description),
-                    ImageUrl = f.ImageUrl,
-                    Brand = f.Brand,
-                    Tags = f.Tags,
-                    Servings = f.Servings,
-                    Nutrition = f.Nutrition.ToNutritionInfo(),
-                    PreviouslyEaten = true
-                };
-            })
+            .Select(id => MapFoodToDto(foodMap[id], true, servingHistory))
             .ToList();
 
         return new FoodSearchResponse
@@ -451,7 +423,7 @@ public class FoodSearchService(
         return categories;
     }
 
-    public async Task<FoodSearchDto?> GetFoodByIdAsync(int foodId)
+    public async Task<FoodSearchDto?> GetFoodByIdAsync(int foodId, int? userId = null)
     {
         var food = await context.FddbFoods
             .Include(f => f.Nutrition)
@@ -459,6 +431,10 @@ public class FoodSearchService(
 
         if (food == null)
             return null;
+
+        var servingHistory = userId.HasValue
+            ? await LoadFoodServingHistoryAsync(userId.Value, [food.Id])
+            : new Dictionary<int, List<ServingInfo>>();
 
         return new FoodSearchDto
         {
@@ -468,9 +444,122 @@ public class FoodSearchService(
             Description = food.Description,
             ImageUrl = food.ImageUrl,
             Brand = food.Brand,
+            Ean = food.Ean,
             Tags = food.Tags,
-            Servings = food.Servings,
+            Servings = BuildServingSuggestions(food, servingHistory),
             Nutrition = food.Nutrition.ToNutritionInfo()
         };
     }
+
+    private FoodSearchDto MapFoodToDto(
+        FddbFood food,
+        bool previouslyEaten,
+        IReadOnlyDictionary<int, List<ServingInfo>>? servingHistory = null)
+    {
+        return new FoodSearchDto
+        {
+            Id = food.Id,
+            Name = WebUtility.HtmlDecode(food.Name),
+            Url = food.Url,
+            Description = WebUtility.HtmlDecode(food.Description),
+            ImageUrl = food.ImageUrl,
+            Brand = food.Brand,
+            Ean = food.Ean,
+            Tags = food.Tags,
+            Servings = BuildServingSuggestions(food, servingHistory),
+            Nutrition = food.Nutrition.ToNutritionInfo(),
+            PreviouslyEaten = previouslyEaten
+        };
+    }
+
+    private async Task<Dictionary<int, List<ServingInfo>>> LoadFoodServingHistoryAsync(
+        int userId,
+        IEnumerable<int> foodIds)
+    {
+        var distinctFoodIds = foodIds.Distinct().ToList();
+        if (distinctFoodIds.Count == 0)
+            return [];
+
+        var rows = await context.FoodEntries
+            .AsNoTracking()
+            .Where(entry => entry.UserId == userId && distinctFoodIds.Contains(entry.FddbFoodId))
+            .OrderByDescending(entry => entry.ConsumedAt)
+            .Select(entry => new
+            {
+                entry.FddbFoodId,
+                entry.GramsConsumed,
+                entry.ServingName
+            })
+            .ToListAsync();
+
+        return rows
+            .GroupBy(row => row.FddbFoodId)
+            .ToDictionary(
+                group => group.Key,
+                group => BuildServingHistory(group.Select(row => new ServingInfo
+                {
+                    Name = string.IsNullOrWhiteSpace(row.ServingName)
+                        ? FormatWeightServingName(row.GramsConsumed)
+                        : row.ServingName.Trim(),
+                    WeightGrams = row.GramsConsumed
+                })));
+    }
+
+    private List<ServingInfo> BuildServingSuggestions(
+        FddbFood food,
+        IReadOnlyDictionary<int, List<ServingInfo>>? servingHistory)
+    {
+        var suggestions = new List<ServingInfo>();
+
+        if (servingHistory != null && servingHistory.TryGetValue(food.Id, out var historySuggestions))
+        {
+            foreach (var historySuggestion in historySuggestions)
+                AddServingSuggestion(suggestions, historySuggestion);
+        }
+
+        foreach (var persistedServing in food.Servings)
+            AddServingSuggestion(suggestions, persistedServing);
+
+        AddServingSuggestion(suggestions, new ServingInfo
+        {
+            Name = FormatWeightServingName(DefaultServingWeightGrams),
+            WeightGrams = DefaultServingWeightGrams
+        });
+
+        return suggestions;
+    }
+
+    private List<ServingInfo> BuildServingHistory(IEnumerable<ServingInfo> servings)
+    {
+        var suggestions = new List<ServingInfo>();
+
+        foreach (var serving in servings)
+        {
+            AddServingSuggestion(suggestions, serving);
+            if (suggestions.Count == _maxServingSuggestions)
+                break;
+        }
+
+        return suggestions;
+    }
+
+    private static void AddServingSuggestion(ICollection<ServingInfo> suggestions, ServingInfo serving)
+    {
+        if (serving.WeightGrams <= 0)
+            return;
+
+        if (suggestions.Any(existing => Math.Abs(existing.WeightGrams - serving.WeightGrams) < DuplicateServingToleranceGrams))
+            return;
+
+        suggestions.Add(new ServingInfo
+        {
+            Name = string.IsNullOrWhiteSpace(serving.Name)
+                ? FormatWeightServingName(serving.WeightGrams)
+                : serving.Name.Trim(),
+            WeightGrams = serving.WeightGrams
+        });
+    }
+
+    private static string FormatWeightServingName(double grams) =>
+        $"{grams.ToString("0.#", CultureInfo.InvariantCulture)} g";
 }

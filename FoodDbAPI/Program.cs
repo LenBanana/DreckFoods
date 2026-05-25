@@ -1,4 +1,6 @@
 using System.Security.Claims;
+using System.Data;
+using System.Data.Common;
 using System.Text;
 using FoodDbAPI.Data;
 using FoodDbAPI.Models.Settings;
@@ -149,11 +151,170 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
-// Apply pending EF Core migrations on startup so schema changes reach existing databases.
-using (var scope = app.Services.CreateScope())
-{
-    var context = scope.ServiceProvider.GetRequiredService<FoodDbContext>();
-    context.Database.Migrate();
-}
+await InitializeDatabaseAsync(app.Services);
 
 app.Run();
+
+static async Task InitializeDatabaseAsync(IServiceProvider services)
+{
+    await using var scope = services.CreateAsyncScope();
+    var context = scope.ServiceProvider.GetRequiredService<FoodDbContext>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("DatabaseInitialization");
+
+    await BaselineLegacyEnsureCreatedSchemaAsync(context, logger);
+    await context.Database.MigrateAsync();
+}
+
+static async Task BaselineLegacyEnsureCreatedSchemaAsync(FoodDbContext context, ILogger logger)
+{
+    var connection = context.Database.GetDbConnection();
+    var shouldCloseConnection = connection.State != ConnectionState.Open;
+
+    if (shouldCloseConnection)
+        await connection.OpenAsync();
+
+    try
+    {
+        var hasInitialSchema = await TableExistsAsync(connection, "Users") &&
+                               await TableExistsAsync(connection, "FoodEntries") &&
+                               await TableExistsAsync(connection, "FddbFoods");
+
+        if (!hasInitialSchema)
+            return;
+
+        logger.LogInformation("Reconciling EF migration history with the current database schema.");
+
+        await context.Database.ExecuteSqlRawAsync(@"
+            CREATE TABLE IF NOT EXISTS ""__EFMigrationsHistory"" (
+                ""MigrationId"" character varying(150) NOT NULL,
+                ""ProductVersion"" character varying(32) NOT NULL,
+                CONSTRAINT ""PK___EFMigrationsHistory"" PRIMARY KEY (""MigrationId"")
+            );");
+
+        await EnsureMigrationHistoryEntryAsync(context,
+            "20250603145542_InitialCreate",
+            "9.0.5");
+
+        var hasMealSchema = await TableExistsAsync(connection, "Meals") &&
+                            await TableExistsAsync(connection, "MealItems") &&
+                            await ColumnExistsAsync(connection, "FoodEntries", "FddbFoodId") &&
+                            await ColumnExistsAsync(connection, "FddbFoods", "Ean");
+        if (hasMealSchema)
+        {
+            await EnsureMigrationHistoryEntryAsync(context,
+                "20250608013529_MealCreation",
+                "9.0.5");
+        }
+
+        var hasNutritionExpansionSchema = await TableExistsAsync(connection, "Meals") &&
+                                         await ColumnTypeContainsAsync(connection, "Meals", "Description", "text") &&
+                                         await ColumnExistsAsync(connection, "FoodEntries", "Caffeine") &&
+                                         await ColumnExistsAsync(connection, "FoodEntries", "Salt") &&
+                                         await ColumnExistsAsync(connection, "FddbFoodNutritions", "CaffeineUnit") &&
+                                         await ColumnExistsAsync(connection, "FddbFoodNutritions", "CaffeineValue");
+        if (hasNutritionExpansionSchema)
+        {
+            await EnsureMigrationHistoryEntryAsync(context,
+                "20260524143956_RemoveMealDescriptionLengthLimit",
+                "9.0.5");
+        }
+
+        var hasServingsSchema = await ColumnExistsAsync(connection, "FddbFoods", "ServingsJson");
+        if (hasServingsSchema)
+        {
+            await EnsureMigrationHistoryEntryAsync(context,
+                "20260524194305_AddServingsJsonToFddbFood",
+                "9.0.5");
+        }
+
+        var hasServingHistorySchema = await ColumnExistsAsync(connection, "FoodEntries", "ServingName") &&
+                                      await TableExistsAsync(connection, "MealPortionLogs");
+        if (hasServingHistorySchema)
+        {
+            await EnsureMigrationHistoryEntryAsync(context,
+                "20260525131654_AddServingHistorySupport",
+                "9.0.5");
+        }
+    }
+    finally
+    {
+        if (shouldCloseConnection)
+            await connection.CloseAsync();
+    }
+}
+
+static async Task<bool> TableExistsAsync(DbConnection connection, string tableName)
+{
+    await using var command = connection.CreateCommand();
+    command.CommandText = @"
+        SELECT EXISTS (
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = @tableName
+        );";
+
+    var parameter = command.CreateParameter();
+    parameter.ParameterName = "@tableName";
+    parameter.Value = tableName;
+    command.Parameters.Add(parameter);
+
+    var result = await command.ExecuteScalarAsync();
+    return result is true || (result is bool boolResult && boolResult);
+}
+
+static async Task<bool> ColumnExistsAsync(DbConnection connection, string tableName, string columnName)
+{
+    await using var command = connection.CreateCommand();
+    command.CommandText = @"
+        SELECT EXISTS (
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = @tableName AND column_name = @columnName
+        );";
+
+    var tableParameter = command.CreateParameter();
+    tableParameter.ParameterName = "@tableName";
+    tableParameter.Value = tableName;
+    command.Parameters.Add(tableParameter);
+
+    var columnParameter = command.CreateParameter();
+    columnParameter.ParameterName = "@columnName";
+    columnParameter.Value = columnName;
+    command.Parameters.Add(columnParameter);
+
+    var result = await command.ExecuteScalarAsync();
+    return result is true || (result is bool boolResult && boolResult);
+}
+
+static async Task<bool> ColumnTypeContainsAsync(DbConnection connection, string tableName, string columnName, string expectedFragment)
+{
+    await using var command = connection.CreateCommand();
+    command.CommandText = @"
+        SELECT data_type
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = @tableName AND column_name = @columnName;";
+
+    var tableParameter = command.CreateParameter();
+    tableParameter.ParameterName = "@tableName";
+    tableParameter.Value = tableName;
+    command.Parameters.Add(tableParameter);
+
+    var columnParameter = command.CreateParameter();
+    columnParameter.ParameterName = "@columnName";
+    columnParameter.Value = columnName;
+    command.Parameters.Add(columnParameter);
+
+    var result = await command.ExecuteScalarAsync();
+    return result is string dataType &&
+           dataType.Contains(expectedFragment, StringComparison.OrdinalIgnoreCase);
+}
+
+static Task EnsureMigrationHistoryEntryAsync(FoodDbContext context, string migrationId, string productVersion)
+{
+    return context.Database.ExecuteSqlRawAsync(@"
+        INSERT INTO ""__EFMigrationsHistory"" (""MigrationId"", ""ProductVersion"")
+        SELECT {0}, {1}
+        WHERE NOT EXISTS (
+            SELECT 1 FROM ""__EFMigrationsHistory"" WHERE ""MigrationId"" = {0}
+        );", migrationId, productVersion);
+}

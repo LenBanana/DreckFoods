@@ -14,6 +14,6 @@ public interface IFoodSearchService
         SortDirection sortDirection = SortDirection.Ascending);
     
     Task<List<string>> GetFoodCategoriesAsync();
-    Task<FoodSearchDto?> GetFoodByIdAsync(int foodId);
+    Task<FoodSearchDto?> GetFoodByIdAsync(int foodId, int? userId = null);
     Task<FoodSearchResponse> GetPastEatenFoodsAsync(int userId, int page = 1, int pageSize = 20);
 }

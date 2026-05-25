@@ -3,6 +3,7 @@ using System.Text;
 using FoodDbAPI.Data;
 using FoodDbAPI.DTOs;
 using FoodDbAPI.Models;
+using FoodDbAPI.Models.Fddb;
 using FoodDbAPI.Services.Interfaces;
 using Microsoft.EntityFrameworkCore;
 
@@ -11,6 +12,8 @@ namespace FoodDbAPI.Services;
 public class MealService(FoodDbContext context, IFoodService foodService, IConfiguration configuration)
     : IMealService
 {
+    private const int MaxServingSuggestions = 6;
+
     public async Task<MealResponseDto> CreateMealAsync(int userId, CreateMealDto createMealDto)
     {
         // Verify all food items exist
@@ -170,7 +173,8 @@ public class MealService(FoodDbContext context, IFoodService foodService, IConfi
             throw new KeyNotFoundException("Meal not found");
         }
 
-        return CreateMealResponseDto(meal);
+        var servingHistory = await LoadMealServingHistoryAsync(userId, [meal.Id]);
+        return CreateMealResponseDto(meal, servingHistory);
     }
     
     public async Task<MealResponseDto> DuplicateMealAsync(int mealId, int userId)
@@ -228,7 +232,8 @@ public class MealService(FoodDbContext context, IFoodService foodService, IConfi
             .OrderByDescending(m => m.UpdatedAt)
             .ToListAsync();
 
-        return meals.Select(CreateMealResponseDto).ToList();
+        var servingHistory = await LoadMealServingHistoryAsync(userId, meals.Select(m => m.Id));
+        return meals.Select(meal => CreateMealResponseDto(meal, servingHistory)).ToList();
     }
 
     public async Task<MealResponseDto> UpdateMealAsync(int mealId, int userId, UpdateMealDto updateMealDto)
@@ -331,6 +336,8 @@ public class MealService(FoodDbContext context, IFoodService foodService, IConfi
         var consumedAt = addMealPortionDto.ConsumedAt ?? DateTime.UtcNow;
         var foodEntries = new List<FoodEntryDto>();
 
+        await using var transaction = await context.Database.BeginTransactionAsync();
+
         // Create food entries for each meal item based on the portion size
         foreach (var mealItem in meal.MealItems)
         {
@@ -345,6 +352,7 @@ public class MealService(FoodDbContext context, IFoodService foodService, IConfi
             {
                 FddbFoodId = mealItem.FddbFoodId,
                 GramsConsumed = gramsConsumed,
+                ServingName = addMealPortionDto.ServingName,
                 ConsumedAt = consumedAt
             };
 
@@ -352,11 +360,26 @@ public class MealService(FoodDbContext context, IFoodService foodService, IConfi
             foodEntries.Add(foodEntry);
         }
 
+        context.MealPortionLogs.Add(new MealPortionLog
+        {
+            UserId = userId,
+            MealId = meal.Id,
+            Weight = addMealPortionDto.Weight,
+            ServingName = NormalizeServingName(addMealPortionDto.ServingName),
+            ConsumedAt = consumedAt,
+            CreatedAt = DateTime.UtcNow
+        });
+
+        await context.SaveChangesAsync();
+        await transaction.CommitAsync();
+
         return foodEntries;
     }
 
     // Helper method to create MealResponseDTO from Meal model
-    private MealResponseDto CreateMealResponseDto(Meal meal)
+    private MealResponseDto CreateMealResponseDto(
+        Meal meal,
+        IReadOnlyDictionary<int, List<ServingInfo>>? servingHistory = null)
     {
         // Calculate total weight and nutrition values
         var totalWeight = meal.MealItems.Sum(mi => mi.Weight);
@@ -420,10 +443,84 @@ public class MealService(FoodDbContext context, IFoodService foodService, IConfi
             Name = meal.Name,
             Description = meal.Description ?? string.Empty,
             Items = mealItems,
+            Servings = BuildMealServingSuggestions(meal, servingHistory),
             TotalWeight = totalWeight,
             Nutrition = nutrition,
             CreatedAt = meal.CreatedAt,
             UpdatedAt = meal.UpdatedAt
         };
+    }
+
+    private async Task<Dictionary<int, List<ServingInfo>>> LoadMealServingHistoryAsync(
+        int userId,
+        IEnumerable<int> mealIds)
+    {
+        var distinctMealIds = mealIds.Distinct().ToList();
+        if (distinctMealIds.Count == 0)
+            return [];
+
+        var rows = await context.MealPortionLogs
+            .AsNoTracking()
+            .Where(log => log.UserId == userId && distinctMealIds.Contains(log.MealId))
+            .OrderByDescending(log => log.ConsumedAt)
+            .Select(log => new
+            {
+                log.MealId,
+                log.Weight,
+                log.ServingName
+            })
+            .ToListAsync();
+
+        return rows
+            .GroupBy(row => row.MealId)
+            .ToDictionary(
+                group => group.Key,
+                group => BuildServingHistory(group.Select(row => new ServingInfo
+                {
+                    Name = string.IsNullOrWhiteSpace(row.ServingName)
+                        ? FormatWeightServingName(row.Weight)
+                        : row.ServingName.Trim(),
+                    WeightGrams = row.Weight
+                })));
+    }
+
+    private static List<ServingInfo> BuildMealServingSuggestions(
+        Meal meal,
+        IReadOnlyDictionary<int, List<ServingInfo>>? servingHistory)
+    {
+        if (servingHistory != null && servingHistory.TryGetValue(meal.Id, out var suggestions))
+            return suggestions;
+
+        return [];
+    }
+
+    private static List<ServingInfo> BuildServingHistory(IEnumerable<ServingInfo> suggestions)
+    {
+        var merged = new List<ServingInfo>();
+
+        foreach (var suggestion in suggestions)
+        {
+            if (suggestion.WeightGrams <= 0)
+                continue;
+
+            if (merged.Any(existing => Math.Abs(existing.WeightGrams - suggestion.WeightGrams) < 0.5))
+                continue;
+
+            merged.Add(suggestion);
+            if (merged.Count == MaxServingSuggestions)
+                break;
+        }
+
+        return merged;
+    }
+
+    private static string FormatWeightServingName(double grams) => $"{grams:0.#} g";
+
+    private static string? NormalizeServingName(string? servingName)
+    {
+        if (string.IsNullOrWhiteSpace(servingName))
+            return null;
+
+        return servingName.Trim();
     }
 }

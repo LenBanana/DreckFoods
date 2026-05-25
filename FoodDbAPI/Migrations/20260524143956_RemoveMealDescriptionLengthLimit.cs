@@ -10,73 +10,49 @@ namespace FoodDbAPI.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AlterColumn<string>(
-                name: "Description",
-                table: "Meals",
-                type: "text",
-                nullable: true,
-                oldClrType: typeof(string),
-                oldType: "character varying(1000)",
-                oldMaxLength: 1000,
-                oldNullable: true);
+            migrationBuilder.Sql(@"
+                ALTER TABLE ""Meals""
+                ALTER COLUMN ""Description"" TYPE text;");
 
-            migrationBuilder.AddColumn<double>(
-                name: "Caffeine",
-                table: "FoodEntries",
-                type: "double precision",
-                nullable: false,
-                defaultValue: 0.0);
+            migrationBuilder.Sql(@"
+                ALTER TABLE ""FoodEntries""
+                ADD COLUMN IF NOT EXISTS ""Caffeine"" double precision NOT NULL DEFAULT 0.0;");
 
-            migrationBuilder.AddColumn<double>(
-                name: "Salt",
-                table: "FoodEntries",
-                type: "double precision",
-                nullable: false,
-                defaultValue: 0.0);
+            migrationBuilder.Sql(@"
+                ALTER TABLE ""FoodEntries""
+                ADD COLUMN IF NOT EXISTS ""Salt"" double precision NOT NULL DEFAULT 0.0;");
 
-            migrationBuilder.AddColumn<string>(
-                name: "CaffeineUnit",
-                table: "FddbFoodNutritions",
-                type: "text",
-                nullable: false,
-                defaultValue: "");
+            migrationBuilder.Sql(@"
+                ALTER TABLE ""FddbFoodNutritions""
+                ADD COLUMN IF NOT EXISTS ""CaffeineUnit"" text NOT NULL DEFAULT '';");
 
-            migrationBuilder.AddColumn<double>(
-                name: "CaffeineValue",
-                table: "FddbFoodNutritions",
-                type: "double precision",
-                nullable: false,
-                defaultValue: 0.0);
+            migrationBuilder.Sql(@"
+                ALTER TABLE ""FddbFoodNutritions""
+                ADD COLUMN IF NOT EXISTS ""CaffeineValue"" double precision NOT NULL DEFAULT 0.0;");
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropColumn(
-                name: "Caffeine",
-                table: "FoodEntries");
+            migrationBuilder.Sql(@"
+                ALTER TABLE ""FoodEntries""
+                DROP COLUMN IF EXISTS ""Caffeine"";");
 
-            migrationBuilder.DropColumn(
-                name: "Salt",
-                table: "FoodEntries");
+            migrationBuilder.Sql(@"
+                ALTER TABLE ""FoodEntries""
+                DROP COLUMN IF EXISTS ""Salt"";");
 
-            migrationBuilder.DropColumn(
-                name: "CaffeineUnit",
-                table: "FddbFoodNutritions");
+            migrationBuilder.Sql(@"
+                ALTER TABLE ""FddbFoodNutritions""
+                DROP COLUMN IF EXISTS ""CaffeineUnit"";");
 
-            migrationBuilder.DropColumn(
-                name: "CaffeineValue",
-                table: "FddbFoodNutritions");
+            migrationBuilder.Sql(@"
+                ALTER TABLE ""FddbFoodNutritions""
+                DROP COLUMN IF EXISTS ""CaffeineValue"";");
 
-            migrationBuilder.AlterColumn<string>(
-                name: "Description",
-                table: "Meals",
-                type: "character varying(1000)",
-                maxLength: 1000,
-                nullable: true,
-                oldClrType: typeof(string),
-                oldType: "text",
-                oldNullable: true);
+            migrationBuilder.Sql(@"
+                ALTER TABLE ""Meals""
+                ALTER COLUMN ""Description"" TYPE character varying(1000);");
         }
     }
 }

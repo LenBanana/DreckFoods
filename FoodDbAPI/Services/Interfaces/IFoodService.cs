@@ -14,9 +14,9 @@ public interface IFoodService
         SortDirection sortDirection = SortDirection.Ascending);
 
     Task<List<string>> GetFoodCategoriesAsync();
-    Task<FoodSearchDto?> GetFoodByIdAsync(int foodId);
+    Task<FoodSearchDto?> GetFoodByIdAsync(int foodId, int? userId = null);
     Task<FoodEntryDto> AddFoodEntryAsync(int userId, CreateFoodEntryRequest request);
-    Task<FoodEntryDto> EditFoodEntryAsync(int userId, EditFoodEntryRequest request);
+    Task<FoodEntryDto> EditFoodEntryAsync(int userId, int entryId, EditFoodEntryRequest request);
     Task<List<FoodEntryDto>> GetFoodEntriesAsync(int userId, DateTime? date = null, int tzOffsetMinutes = 0);
     Task DeleteFoodEntryAsync(int userId, int entryId);
     Task<List<DailyTimelineDto>> GetTimelineAsync(int userId, DateTime startDate, DateTime endDate, int tzOffsetMinutes = 0);

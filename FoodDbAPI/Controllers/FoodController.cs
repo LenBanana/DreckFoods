@@ -63,7 +63,8 @@ public class FoodController(IFoodService foodService, ILogger<FoodController> lo
     {
         try
         {
-            var food = await foodService.GetFoodByIdAsync(foodId);
+            var userId = User.GetUserId();
+            var food = await foodService.GetFoodByIdAsync(foodId, userId);
             if (food == null)
             {
                 return NotFound(new { message = "Food not found" });
@@ -108,7 +109,7 @@ public class FoodController(IFoodService foodService, ILogger<FoodController> lo
         try
         {
             var userId = User.GetUserId();
-            var entry = await foodService.EditFoodEntryAsync(userId, request);
+            var entry = await foodService.EditFoodEntryAsync(userId, entryId, request);
             return Ok(entry);
         }
         catch (ArgumentException ex)
