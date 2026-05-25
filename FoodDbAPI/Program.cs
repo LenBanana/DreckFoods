@@ -149,11 +149,11 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
-// Ensure database is created
+// Apply pending EF Core migrations on startup so schema changes reach existing databases.
 using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<FoodDbContext>();
-    context.Database.EnsureCreated();
+    context.Database.Migrate();
 }
 
 app.Run();
