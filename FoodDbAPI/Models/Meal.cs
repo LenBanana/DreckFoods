@@ -19,6 +19,12 @@ public class Meal
     
     public ICollection<MealItem> MealItems { get; set; } = new List<MealItem>();
     
+    /// <summary>
+    /// Optional cooked/final weight of the meal in grams. When set, macro concentration
+    /// per 100 g is calculated using this value instead of the sum of raw ingredient weights.
+    /// </summary>
+    public double? CookedWeight { get; set; }
+    
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

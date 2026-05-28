@@ -32,6 +32,7 @@ public class MealService(FoodDbContext context, IFoodService foodService, IConfi
         {
             Name = createMealDto.Name,
             Description = createMealDto.Description,
+            CookedWeight = createMealDto.CookedWeight,
             UserId = userId,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
@@ -125,6 +126,7 @@ public class MealService(FoodDbContext context, IFoodService foodService, IConfi
             {
                 Name = sharedMeal.Name,
                 Description = sharedMeal.Description,
+                CookedWeight = sharedMeal.CookedWeight,
                 UserId = userId,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
@@ -195,6 +197,7 @@ public class MealService(FoodDbContext context, IFoodService foodService, IConfi
         {
             Name = originalMeal.Name + " (Copy)",
             Description = originalMeal.Description,
+            CookedWeight = originalMeal.CookedWeight,
             UserId = userId,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
@@ -256,6 +259,12 @@ public class MealService(FoodDbContext context, IFoodService foodService, IConfi
         if (updateMealDto.Description != null)
         {
             meal.Description = updateMealDto.Description;
+        }
+
+        // Apply cooked weight when the client explicitly flags it (allows clearing to null)
+        if (updateMealDto.UpdateCookedWeight)
+        {
+            meal.CookedWeight = updateMealDto.CookedWeight;
         }
 
         // Update items if provided
@@ -325,11 +334,23 @@ public class MealService(FoodDbContext context, IFoodService foodService, IConfi
         }
 
         // Calculate total meal weight
-        var totalMealWeight = meal.MealItems.Sum(mi => mi.Weight);
+        var totalRawWeight = meal.MealItems.Sum(mi => mi.Weight);
 
-        if (totalMealWeight <= 0)
+        if (totalRawWeight <= 0)
         {
             throw new InvalidOperationException("Meal has no items or total weight is zero");
+        }
+
+        // When CookedWeight is set, the user is logging grams of the *cooked* meal.
+        // Each raw ingredient must be scaled by (portionWeight / cookedWeight) rather than
+        // (portionWeight / totalRawWeight), because the cooking process concentrates macros.
+        // Example: 450 g raw → 300 g cooked. Logging 200 g cooked means the user consumed
+        //   (200/300) of each raw ingredient, not (200/450).
+        var effectiveWeight = meal.CookedWeight ?? totalRawWeight;
+
+        if (effectiveWeight <= 0)
+        {
+            throw new InvalidOperationException("Effective meal weight is zero");
         }
 
         // Use current time if ConsumedAt is not provided
@@ -341,11 +362,10 @@ public class MealService(FoodDbContext context, IFoodService foodService, IConfi
         // Create food entries for each meal item based on the portion size
         foreach (var mealItem in meal.MealItems)
         {
-            // Calculate the proportion of this item in the meal
-            var proportion = mealItem.Weight / totalMealWeight;
-
-            // Calculate how much of this item should be in the consumed portion
-            var gramsConsumed = proportion * addMealPortionDto.Weight;
+            // gramsConsumed = (rawItemWeight / effectiveWeight) × portionWeight
+            // Dividing by effectiveWeight (cooked) instead of totalRawWeight correctly
+            // accounts for the water/mass lost during cooking.
+            var gramsConsumed = (mealItem.Weight / effectiveWeight) * addMealPortionDto.Weight;
 
             // Create food entry via the food service
             var createFoodEntryRequest = new CreateFoodEntryRequest
@@ -382,7 +402,11 @@ public class MealService(FoodDbContext context, IFoodService foodService, IConfi
         IReadOnlyDictionary<int, List<ServingInfo>>? servingHistory = null)
     {
         // Calculate total weight and nutrition values
-        var totalWeight = meal.MealItems.Sum(mi => mi.Weight);
+        var totalRawWeight = meal.MealItems.Sum(mi => mi.Weight);
+        // Effective weight drives per-100g concentration and portion math.
+        // When CookedWeight is set it reflects real post-cooking mass (e.g. a stew);
+        // otherwise fall back to the sum of raw ingredient weights.
+        var effectiveWeight = meal.CookedWeight ?? totalRawWeight;
 
         // Initialize nutrition totals
         double totalCalories = 0;
@@ -415,25 +439,26 @@ public class MealService(FoodDbContext context, IFoodService foodService, IConfi
         }
 
         // Calculate nutrition values per 100g for the entire meal
+        // Using effectiveWeight so that cooked meals report correct macro density.
         var nutrition = new MealNutritionDto();
-        if (totalWeight > 0)
+        if (effectiveWeight > 0)
         {
-            nutrition.Calories = (totalCalories / totalWeight) * 100;
-            nutrition.Protein = (totalProtein / totalWeight) * 100;
-            nutrition.Fat = (totalFat / totalWeight) * 100;
-            nutrition.Carbohydrates = (totalCarbohydrates / totalWeight) * 100;
-            nutrition.Fiber = (totalFiber / totalWeight) * 100;
-            nutrition.Sugar = (totalSugar / totalWeight) * 100;
+            nutrition.Calories = (totalCalories / effectiveWeight) * 100;
+            nutrition.Protein = (totalProtein / effectiveWeight) * 100;
+            nutrition.Fat = (totalFat / effectiveWeight) * 100;
+            nutrition.Carbohydrates = (totalCarbohydrates / effectiveWeight) * 100;
+            nutrition.Fiber = (totalFiber / effectiveWeight) * 100;
+            nutrition.Sugar = (totalSugar / effectiveWeight) * 100;
         }
 
-        // Create meal items response
+        // Create meal items response — percentages are of raw total (ingredient composition)
         var mealItems = meal.MealItems.Select(mi => new MealItemResponseDto
         {
             Id = mi.Id,
             FddbFoodId = mi.FddbFoodId,
             FoodName = mi.FddbFood?.Name ?? "Unknown Food",
             Weight = mi.Weight,
-            Percentage = totalWeight > 0 ? (mi.Weight / totalWeight) * 100 : 0
+            Percentage = totalRawWeight > 0 ? (mi.Weight / totalRawWeight) * 100 : 0
         }).ToList();
 
         // Create and return the meal response
@@ -444,7 +469,9 @@ public class MealService(FoodDbContext context, IFoodService foodService, IConfi
             Description = meal.Description ?? string.Empty,
             Items = mealItems,
             Servings = BuildMealServingSuggestions(meal, servingHistory),
-            TotalWeight = totalWeight,
+            TotalWeight = effectiveWeight,
+            RawTotalWeight = totalRawWeight,
+            CookedWeight = meal.CookedWeight,
             Nutrition = nutrition,
             CreatedAt = meal.CreatedAt,
             UpdatedAt = meal.UpdatedAt
