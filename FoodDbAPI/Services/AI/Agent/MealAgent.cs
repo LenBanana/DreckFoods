@@ -27,17 +27,28 @@ public class MealAgent : IMealAgent
     private const string LogModeSystemPromptTemplate =
         """
         You are a meal logging assistant for a nutrition tracking app.
-        Your single goal: log the user's meal as accurately as possible.
-        The user describes what they ate in free text, your goal is to identify each ingredient, its quantity in grams, and the best-matching food in the database.
-        When users describe a meal, they often omit details like brand names or quantities. Use the tools below to ask follow-up questions and search the food database until you're confident about each ingredient's identity and quantity.
-        Sometimes users may eat out or consume new products that aren't in the database. In that case, do your best to find similar foods and ask questions to narrow down the closest match. It's better to ask too many questions than to log something inaccurate.
-        Users are optimizing their health, so they care about accurate calorie and macronutrient counts. When in doubt, ask questions or offer multiple candidates instead of guessing wrong.
+        Your goal is to log the user's meal as accurately and efficiently as possible.
+        Identify every food item, the consumed grams, and the best matching food_id in the database.
+        Users care about calories and macros, so product identity, preparation state, and grams matter.
+
+        === SEARCH STRATEGY ===
+        The food database search matches every query word against food name, brand, EAN/barcode, and description.
+        Use the most specific useful query first. If the user gives a brand, product line, barcode, flavor, or preparation state, include it.
+        Use generic ingredient names only when the user described a generic ingredient, or when an exact product search fails.
+        If results are weak or empty, retry with fewer/different distinctive words; remove package-size words, marketing adjectives, or spelling variants before giving up.
+        If results are too broad, retry with brand, product type, preparation state, or other distinctive terms.
+        Prefer an exact brand/product match over a generic food. Prefer previously consumed foods when the user description is ambiguous or matches their history.
+        Use serving_hints from search results to convert portions like "1 Becher", "2 Scheiben", or the user's usual serving into grams.
+
+        Ask questions only when the missing answer materially changes the food choice or grams. Provide realistic preset answers and mark the best estimate as recommended.
+        When several plausible foods remain, use suggest_food with the best candidate preselected so the user can review quickly.
+        DIRECT PATH: if food_ids and grams are already certain (for example from a confirmed selection, exact previous food, or unambiguous exact search result), update the meal draft directly.
 
         === TOOLS ===
-        * ask_questions     -- Total weight when genuinely unknown. Set recommended:true on your best guess.
-        * search_food       -- Generic term, refine until satisfied. No search limit.
-        * suggest_food      -- All ingredients at once. Per-ingredient weights. Always preselect best match.
-        * update_meal_draft -- After confirmation or via DIRECT PATH.
+        * ask_questions     -- Clarify grams, brand/product, preparation state, or key missing details. Set recommended:true on your best estimate.
+        * search_food       -- Search exact brand/product/barcode terms when available; broaden or narrow based on results.
+        * suggest_food      -- Present all unresolved food choices at once. Per-item grams. Always preselect the best match when one exists.
+        * update_meal_draft -- Replace the draft after confirmation, or via DIRECT PATH when no meaningful user choice remains.
 
         === PREVIOUSLY CONSUMED FOODS ===
         The foods below were recently eaten by this user. Their food_ids are valid.
@@ -60,8 +71,8 @@ public class MealAgent : IMealAgent
         When the user asks for meal ideas or describes a dish they want to make:
         1. Be proactive: suggest a complete, balanced set of ingredients with realistic quantities.
         2. Ask clarifying questions only when the serving size or a key ingredient is genuinely unclear.
-        3. Search the database for every ingredient using generic names (no brands).
-        4. Present all candidates at once via suggest_food — always preselect your best match so the user only needs to review.
+        3. Search the database for every ingredient. Use brands/product names when the user gives them; otherwise use specific ingredient names.
+        4. Present all candidates at once via suggest_food -- always preselect your best match so the user only needs to review.
         5. After the user confirms, update the recipe draft. You may follow up to refine the recipe or add sides.
 
         The final draft is saved as a reusable recipe. The user will log individual portions of it later — you do NOT need to ask when it was consumed.
@@ -75,10 +86,17 @@ public class MealAgent : IMealAgent
         For serving size: assume one person unless stated otherwise. Use standard cooking quantities.
         Always think about balance: protein, carbohydrates, fat, and vegetables.
 
+        === SEARCH STRATEGY ===
+        The food database search matches every query word against food name, brand, EAN/barcode, and description.
+        Use exact brand/product queries for packaged foods and specific ingredient queries for whole foods.
+        If results are weak or empty, retry with fewer/different distinctive words. If results are too broad, add brand, preparation state, or product type.
+        Prefer exact product matches over generic foods. Prefer known foods for this user when relevant.
+        Use serving_hints from search results when converting recipe units or usual portions into grams.
+
         === TOOLS ===
-        * ask_questions     -- Ask about serving count, missing ingredients, or dietary preferences. Set recommended:true on your best guess.
-        * search_food       -- Generic ingredient name (e.g. "Hähnchenbrust", "Dosen Tomaten"). Refine until satisfied.
-        * suggest_food      -- All ingredients at once. Per-ingredient quantities. Always preselect your best match.
+        * ask_questions     -- Ask about serving count, missing ingredients, dietary preferences, or grams. Set recommended:true on your best estimate.
+        * search_food       -- Search exact brand/product/barcode terms when available; broaden or narrow based on results.
+        * suggest_food      -- Present all unresolved food choices at once. Per-item quantities. Always preselect your best match.
         * update_meal_draft -- After the user confirms selections.
 
         === KNOWN FOODS FOR THIS USER ===
@@ -212,27 +230,35 @@ public class MealAgent : IMealAgent
                     }
                     else
                     {
+                        var rankedFoods = RankFoodsForAgent(args.Query, results.Foods);
+
                         // Cache results for suggest_food and update_meal_draft lookups.
-                        foreach (var food in results.Foods)
+                        foreach (var food in rankedFoods)
                             session.FoodCache[food.Id] = food;
 
-                        yield return new AgentFoodResults(args.Query, results.Foods);
+                        yield return new AgentFoodResults(args.Query, rankedFoods);
 
                         // Return a compact summary to avoid wasting tokens.
-                        var modelContext = results.Foods.Select(f => new
+                        var modelContext = rankedFoods.Select(food => new
                         {
-                            id = f.Id,
-                            name = f.Name,
-                            brand = f.Brand,
-                            calories_per_100g = f.Nutrition.Calories.Value,
-                            protein_per_100g = f.Nutrition.Protein.Value,
-                            carbs_per_100g = f.Nutrition.Carbohydrates.Total.Value,
-                            fat_per_100g = f.Nutrition.Fat.Value,
-                            previously_eaten = f.PreviouslyEaten
+                            id = food.Id,
+                            name = food.Name,
+                            brand = food.Brand,
+                            ean = food.Ean,
+                            calories_per_100g = food.Nutrition.Calories.Value,
+                            protein_per_100g = food.Nutrition.Protein.Value,
+                            carbs_per_100g = food.Nutrition.Carbohydrates.Total.Value,
+                            fat_per_100g = food.Nutrition.Fat.Value,
+                            serving_hints = food.Servings.Take(4).Select(serving => new
+                            {
+                                name = serving.Name,
+                                grams = serving.WeightGrams
+                            }),
+                            previously_eaten = food.PreviouslyEaten
                         });
 
-                        toolResult = results.Foods.Count == 0
-                            ? "No results found. Try a broader or different generic term."
+                        toolResult = rankedFoods.Count == 0
+                            ? "No results found. Try an exact brand/product/barcode if known, or retry with fewer/different distinctive words."
                             : JsonSerializer.Serialize(modelContext);
                     }
                 }
@@ -393,6 +419,84 @@ public class MealAgent : IMealAgent
 
         return template.Replace("{PAST_FOODS}", pastFoodsSection);
     }
+
+    private static List<FoodSearchDto> RankFoodsForAgent(string query, IReadOnlyList<FoodSearchDto> foods)
+    {
+        var normalizedQuery = NormalizeForSearch(query);
+        var searchTerms = normalizedQuery
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        return foods
+            .Select((food, index) => new
+            {
+                Food = food,
+                Index = index,
+                Score = CalculateAgentSearchScore(food, normalizedQuery, searchTerms)
+            })
+            .OrderByDescending(item => item.Score)
+            .ThenBy(item => item.Index)
+            .Select(item => item.Food)
+            .ToList();
+    }
+
+    private static int CalculateAgentSearchScore(
+        FoodSearchDto food,
+        string normalizedQuery,
+        IReadOnlyList<string> searchTerms)
+    {
+        var name = NormalizeForSearch(food.Name);
+        var brand = NormalizeForSearch(food.Brand);
+        var ean = NormalizeForSearch(food.Ean);
+        var description = NormalizeForSearch(food.Description);
+        var combinedProduct = NormalizeForSearch($"{food.Brand} {food.Name}");
+        var score = 0;
+
+        if (!string.IsNullOrEmpty(normalizedQuery))
+        {
+            if (ean == normalizedQuery)
+                score += 12000;
+            if (combinedProduct == normalizedQuery)
+                score += 10000;
+            if (name == normalizedQuery)
+                score += 8500;
+            if (combinedProduct.Contains(normalizedQuery))
+                score += 1400;
+            if (name.Contains(normalizedQuery))
+                score += 1200;
+            if (brand.Contains(normalizedQuery))
+                score += 700;
+            if (name.StartsWith(normalizedQuery, StringComparison.Ordinal))
+                score += 350;
+            if (brand.StartsWith(normalizedQuery, StringComparison.Ordinal))
+                score += 250;
+        }
+
+        foreach (var searchTerm in searchTerms)
+        {
+            if (name == searchTerm)
+                score += 500;
+            if (brand == searchTerm)
+                score += 450;
+            if (ean == searchTerm)
+                score += 900;
+            if (name.Contains(searchTerm))
+                score += 100;
+            if (brand.Contains(searchTerm))
+                score += 80;
+            if (description.Contains(searchTerm))
+                score += 25;
+            if (food.Tags.Any(tag => NormalizeForSearch(tag).Contains(searchTerm)))
+                score += 25;
+        }
+
+        if (food.PreviouslyEaten)
+            score += 300;
+
+        return score;
+    }
+
+    private static string NormalizeForSearch(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim().ToLowerInvariant();
 
     // -- Private DTO types for tool argument deserialisation ---------------------
 

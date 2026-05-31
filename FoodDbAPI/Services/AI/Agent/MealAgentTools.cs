@@ -12,16 +12,17 @@ public static class MealAgentTools
     public static readonly AIToolDefinition SearchFood = new()
     {
         Name = "search_food",
-        Description = "Search the food database for a food item by generic name. " +
-                      "Use broad ingredient names (e.g. 'Reis', 'Hähnchenfilet', 'Champignons'), never brand names. " +
-                      "Returns the top matching foods with nutritional values per 100 g and their database IDs.",
+        Description = "Search the food database for matching foods. " +
+                      "Use exact brand, product, barcode/EAN, flavor, or preparation terms when the user provides them; use generic ingredient names only for generic ingredients or fallback searches. " +
+                      "The database matches query words against food name, brand, EAN, and description. If results are weak, retry with fewer/different distinctive words; if too broad, add brand/product/preparation detail. " +
+                      "Returns ranked matches with database IDs, brand, nutrition per 100 g, serving hints, and whether the user ate them before.",
         ParametersJsonSchema = JsonDocument.Parse("""
             {
               "type": "object",
               "properties": {
                 "query": {
                   "type": "string",
-                  "description": "Generic ingredient name, e.g. \"Reis\", \"Hähnchenfilet\", \"Champignons\""
+                  "description": "Food search query. Include brand/product/barcode when known, e.g. \"REWE Beste Wahl Basmati Reis\", \"Hähnchenfilet\", \"Champignons\"."
                 }
               },
               "required": ["query"]
@@ -33,35 +34,35 @@ public static class MealAgentTools
     {
         Name = "suggest_food",
         Description = "Present the best food candidates for ALL ingredients at once via a structured selection UI. " +
-                      "Call this ONCE after all search_food calls are done. Do NOT write any text before or after this call. " +
-                      "Always set preselected_food_id to your best candidate for each ingredient. " +
-                      "The user reviews pre-selections and confirms — do not call search_food again after this.",
+                "Call this once after necessary searches/questions are done and at least one ingredient still needs user review. Do NOT write any text before or after this call. " +
+                "Include exact brand/product matches when available, order candidates best-first, and always set preselected_food_id when one candidate is most likely. " +
+                "The user reviews pre-selections and confirms; do not call search_food again after this turn-ending tool.",
         ParametersJsonSchema = JsonDocument.Parse("""
             {
               "type": "object",
               "properties": {
                 "suggestions": {
                   "type": "array",
-                  "description": "One entry per ingredient, with 2-4 candidate food IDs ordered by best match.",
+                  "description": "One entry per ingredient needing review, with 1-4 candidate food IDs ordered by best match.",
                   "items": {
                     "type": "object",
                     "properties": {
                       "ingredient_label": {
                         "type": "string",
-                        "description": "Human-readable label shown to the user, e.g. \"Beutelreis (125g)\""
+                        "description": "Human-readable label shown to the user, including brand/product or serving detail when relevant, e.g. \"REWE Basmati Reis (125g)\""
                       },
                       "quantity_grams": {
                         "type": "number",
-                        "description": "Confirmed quantity in grams. Use 0 only if still unknown after ask_questions."
+                        "description": "Best known quantity in grams. Use serving_hints, user history, or confirmed answers; use 0 only if still unknown after asking."
                       },
                       "candidate_food_ids": {
                         "type": "array",
-                        "description": "2-4 food IDs from search_food results or the previously-eaten list, best match first.",
+                        "description": "1-4 food IDs from search_food results or the previously-eaten list, best match first.",
                         "items": { "type": "integer" }
                       },
                       "preselected_food_id": {
                         "type": "integer",
-                        "description": "The food ID you consider the best match. The UI pre-selects this so the user only needs to review. Always provide this when you have a clear best candidate."
+                        "description": "The food ID you consider the best match. The UI pre-selects this so the user only needs to review. Always provide this for exact brand/product matches, previously eaten matches, or any clear best candidate."
                       },
                       "allow_custom": {
                         "type": "boolean",
@@ -80,9 +81,9 @@ public static class MealAgentTools
     public static readonly AIToolDefinition AskQuestions = new()
     {
         Name = "ask_questions",
-        Description = "Ask the user one or more clarifying questions (e.g., missing quantities) via a structured widget. " +
-                      "Call this BEFORE searching when amounts are unknown. Do NOT write any text before or after this call. " +
-                      "The user answers in the UI and the answers arrive in the next message.",
+        Description = "Ask one or more clarifying questions via a structured widget when missing details materially affect food identity or grams. " +
+                "Ask about quantities, serving counts, brand/product, cooked vs raw state, or key recipe choices; provide realistic presets and mark your best estimate with recommended:true. " +
+                "Do NOT write any text before or after this turn-ending tool. The user's answers arrive in the next message.",
         ParametersJsonSchema = JsonDocument.Parse("""
             {
               "type": "object",
@@ -98,7 +99,7 @@ public static class MealAgentTools
                       },
                       "label": {
                         "type": "string",
-                        "description": "The question displayed to the user, e.g. \"Wie viel Sojasauce?\""
+                        "description": "The question displayed to the user, e.g. \"Welche Menge Reis war es?\" or \"Welche Marke war der Joghurt?\""
                       },
                       "choices": {
                         "type": "array",
@@ -130,8 +131,8 @@ public static class MealAgentTools
     public static readonly AIToolDefinition UpdateMealDraft = new()
     {
         Name = "update_meal_draft",
-        Description = "Replace the current meal draft with the confirmed items. " +
-                      "Call this immediately after receiving '[Confirmed food selections]' from the user. " +
+        Description = "Replace the current meal draft with all confirmed or certain items. " +
+                "Call this immediately after receiving '[Confirmed food selections]' from the user, or directly when exact food IDs and gram quantities are already certain and no useful review step remains. " +
                       "Always include ALL items in the draft, not just new ones.",
         ParametersJsonSchema = JsonDocument.Parse("""
             {
@@ -157,5 +158,5 @@ public static class MealAgentTools
     };
 
     /// <summary>All tools in their recommended invocation order.</summary>
-    public static readonly IList<AIToolDefinition> All = [SearchFood, AskQuestions, SuggestFood, UpdateMealDraft];
+    public static readonly IList<AIToolDefinition> All = [AskQuestions, SearchFood, SuggestFood, UpdateMealDraft];
 }
